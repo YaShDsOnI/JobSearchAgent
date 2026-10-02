@@ -1,0 +1,35 @@
+[
+  {
+    "source_job_id": "fixture-001",
+    "title": "Example Platform Engineer",
+    "employer": "Example Systems",
+    "canonical_url": "https://example.invalid/jobs/fixture-001",
+    "location_text": "Remote - geography unspecified",
+    "work_mode": "remote",
+    "description": "Sanitized fixture only. This record is not a live job and must not be used for an application. Python and PostgreSQL are required. Kubernetes is preferred.",
+    "permitted_countries": [],
+    "sponsorship": "unknown",
+    "requirements": [
+      {"skill": "Python", "kind": "required", "importance": 1.0, "minimum_years": 3, "evidence": "Python and PostgreSQL are required."},
+      {"skill": "PostgreSQL", "kind": "required", "importance": 1.0, "evidence": "Python and PostgreSQL are required."},
+      {"skill": "Kubernetes", "kind": "preferred", "importance": 0.7, "evidence": "Kubernetes is preferred."}
+    ]
+  },
+  {
+    "source_job_id": "fixture-002",
+    "title": "Example Data Analyst",
+    "employer": "Example Research",
+    "canonical_url": "https://example.invalid/jobs/fixture-002",
+    "location_text": "Vadodara, India",
+    "work_mode": "onsite",
+    "description": "Sanitized fixture only. This record is not a live job and must not be used for an application. SQL and Excel are required. Python is preferred.",
+    "location_country": "IN",
+    "permitted_countries": ["IN"],
+    "sponsorship": "not_available",
+    "requirements": [
+      {"skill": "SQL", "kind": "required", "importance": 1.0, "minimum_years": 2, "evidence": "SQL and Excel are required."},
+      {"skill": "Excel", "kind": "required", "importance": 1.0, "evidence": "SQL and Excel are required."},
+      {"skill": "Python", "kind": "preferred", "importance": 0.6, "evidence": "Python is preferred."}
+    ]
+  }
+]

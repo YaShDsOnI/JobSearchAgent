@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jobfinderagent-backend"
+version = "0.1.0"
+description = "JobFinderAgent API: profile, matching, factual CV drafting, job discovery"
+requires-python = ">=3.12"
+dependencies = [
+  "alembic>=1.13,<2",
+  "bcrypt>=4.0,<5",
+  "cryptography>=50,<52",
+  "fastapi>=0.115,<1",
+  "httpcore>=1.0,<2",  # DNS-pinning network backend (app/services/sources/egress.py)
+  "httpx>=0.27,<1",
+  "PyJWT>=2.8,<3",
+  "pydantic-settings>=2.14.2,<3",
+  "psycopg[binary]>=3.2,<4",
+  "python-multipart>=0.0.9,<1",
+  "sqlalchemy>=2.0,<3",
+  "uvicorn[standard]>=0.30,<1",
+  # Security floors for transitive dependencies (pip-audit, 2026-09-29).
+  "anyio>=4.14.2",
+  "click>=8.3.3",
+  "idna>=3.15",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.13,<2",
+  "pip-audit>=2.7",
+  "pytest>=9.0.3,<10",
+  "pytest-cov>=6,<8",
+  "ruff>=0.8,<1",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = ["migrations/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = ["B008"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+warn_unused_ignores = true
+check_untyped_defs = true
+exclude = "migrations/"

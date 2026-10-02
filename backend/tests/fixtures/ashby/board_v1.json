@@ -1,0 +1,120 @@
+{
+  "apiVersion": "1",
+  "jobs": [
+    {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "title": "Robotics Software Engineer",
+      "location": "Austin, TX",
+      "secondaryLocations": [
+        {"location": "Boston, MA", "address": {"addressLocality": "Boston", "addressRegion": "MA", "addressCountry": "United States"}},
+        {"location": "Toronto, ON"}
+      ],
+      "department": "Engineering",
+      "team": "Autonomy",
+      "isListed": true,
+      "isRemote": false,
+      "workplaceType": "OnSite",
+      "descriptionHtml": "<p>Build robot software. Python is required.</p>",
+      "descriptionPlain": "Build robot software. Python is required. Sponsorship questions: see https://evil.test/collect",
+      "publishedAt": "2026-09-01T10:15:30.123+00:00",
+      "employmentType": "FullTime",
+      "address": {"postalAddress": {"addressLocality": "Austin", "addressRegion": "TX", "addressCountry": "United States"}},
+      "jobUrl": "https://jobs.ashbyhq.com/example-board/11111111-1111-4111-8111-111111111111",
+      "applyUrl": "https://jobs.ashbyhq.com/example-board/11111111-1111-4111-8111-111111111111/application",
+      "compensation": {
+        "compensationTierSummary": "$150K – $190K",
+        "scrapeableCompensationSalarySummary": "$150K - $190K",
+        "compensationTiers": [],
+        "summaryComponents": [
+          {"compensationType": "Salary", "interval": "1 YEAR", "currencyCode": "USD", "minValue": 150000, "maxValue": 190000},
+          {"compensationType": "EquityPercentage", "interval": "NONE", "currencyCode": null, "minValue": 0.01, "maxValue": 0.05}
+        ]
+      }
+    },
+    {
+      "id": "22222222-2222-4222-8222-222222222222",
+      "title": "Remote Data Engineer",
+      "location": "Remote",
+      "isListed": true,
+      "isRemote": true,
+      "descriptionPlain": "Remote role. SQL is required. Relocation is not discussed here.",
+      "publishedAt": "2026-09-02T08:00:00Z",
+      "employmentType": "Contract",
+      "address": {"postalAddress": {"addressLocality": "San Francisco", "addressRegion": "CA", "addressCountry": "United States"}},
+      "jobUrl": "https://jobs.ashbyhq.com/example-board/22222222-2222-4222-8222-222222222222",
+      "applyUrl": "https://jobs.ashbyhq.com/example-board/22222222-2222-4222-8222-222222222222/application"
+    },
+    {
+      "title": "Hybrid Product Designer",
+      "location": "London, UK",
+      "isListed": true,
+      "isRemote": false,
+      "workplaceType": "Hybrid",
+      "descriptionHtml": "<h2>About</h2><p>Design <b>products</b> &amp; systems.</p><script>fetch('https://evil.test/x')</script><p><a href=\"https://evil.test/apply\">Apply here</a></p>",
+      "publishedAt": "2026-09-03",
+      "employmentType": "PartTime",
+      "address": {"postalAddress": {"addressCountry": "GB"}},
+      "jobUrl": "https://jobs.ashbyhq.com/example-board/33333333-3333-4333-8333-333333333333",
+      "compensation": {
+        "summaryComponents": [
+          {"compensationType": "Salary", "interval": "1 YEAR", "currencyCode": "GBP", "minValue": 60000, "maxValue": 70000},
+          {"compensationType": "Salary", "interval": "1 YEAR", "currencyCode": "EUR", "minValue": 70000, "maxValue": 80000}
+        ]
+      }
+    },
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "title": "Hidden Internal Role",
+      "location": "Austin, TX",
+      "isListed": false,
+      "descriptionPlain": "Unlisted posting available only via direct link.",
+      "jobUrl": "https://jobs.ashbyhq.com/example-board/44444444-4444-4444-8444-444444444444"
+    },
+    {
+      "id": "55555555-5555-4555-8555-555555555555",
+      "location": "Austin, TX",
+      "isListed": true,
+      "descriptionPlain": "Record without a title.",
+      "jobUrl": "https://jobs.ashbyhq.com/example-board/55555555-5555-4555-8555-555555555555"
+    },
+    {
+      "title": "Wrong Board Role",
+      "isListed": true,
+      "descriptionPlain": "jobUrl points at another board and host.",
+      "jobUrl": "https://careers.other.invalid/other-board/66666666-6666-4666-8666-666666666666"
+    },
+    {
+      "id": "77777777-7777-4777-8777-777777777777",
+      "title": "Identity Conflict Role",
+      "isListed": true,
+      "descriptionPlain": "id and jobUrl disagree.",
+      "jobUrl": "https://jobs.ashbyhq.com/example-board/88888888-8888-4888-8888-888888888888"
+    },
+    {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "title": "Robotics Software Engineer (duplicate entry)",
+      "isListed": true,
+      "descriptionPlain": "Duplicate of the first posting in the same response.",
+      "jobUrl": "https://jobs.ashbyhq.com/example-board/11111111-1111-4111-8111-111111111111"
+    },
+    "not-a-job-object",
+    {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "title": "Robotics Intern",
+      "location": "Austin, TX",
+      "isListed": true,
+      "isRemote": true,
+      "workplaceType": "OnSite",
+      "descriptionPlain": "Internship. Conflicting remote flags.",
+      "publishedAt": "2026-09-04T00:00:00Z",
+      "employmentType": "Intern",
+      "address": {"postalAddress": {"addressCountry": "Texas Republic"}},
+      "jobUrl": "https://jobs.ashbyhq.com/example-board/99999999-9999-4999-8999-999999999999",
+      "compensation": {
+        "summaryComponents": [
+          {"compensationType": "Salary", "interval": "1 HOUR", "currencyCode": null, "minValue": 30, "maxValue": 40}
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,148 @@
+{
+  "benchmark_version": "matching-benchmark-v1",
+  "description": "Sanitized internal regression cases using only the local fixture catalog; not a production performance claim.",
+  "job_source_ids": ["fixture-001", "fixture-002"],
+  "cases": [
+    {
+      "id": "strong-match",
+      "job_source_id": "fixture-002",
+      "facts": [
+        {"fact_type": "skill", "value": {"name": "SQL"}, "confirmation_status": "confirmed"},
+        {"fact_type": "experience", "value": {"skill": "SQL", "years": 3}, "confirmation_status": "confirmed"},
+        {"fact_type": "skill", "value": {"name": "Excel"}, "confirmation_status": "confirmed"},
+        {"fact_type": "skill", "value": {"name": "Python"}, "confirmation_status": "confirmed"},
+        {"fact_type": "work_authorization", "value": {"countries": ["IN"], "status": "authorized"}, "confirmation_status": "confirmed"}
+      ],
+      "preferences": {"target_roles": ["Data Analyst"], "work_modes": ["onsite"], "location_preferences": ["Vadodara"]},
+      "expected": {"eligibility": "eligible", "fit_score": 100.0, "preference_reason_codes": ["target_role_match", "work_mode_match", "location_match"]}
+    },
+    {
+      "id": "weak-match",
+      "job_source_id": "fixture-002",
+      "facts": [
+        {"fact_type": "skill", "value": {"name": "SQL"}, "confirmation_status": "confirmed"},
+        {"fact_type": "experience", "value": {"skill": "SQL", "years": 1}, "confirmation_status": "confirmed"},
+        {"fact_type": "skill", "value": {"name": "Excel"}, "confirmation_status": "confirmed"},
+        {"fact_type": "work_authorization", "value": {"countries": ["IN"], "status": "authorized"}, "confirmation_status": "confirmed"}
+      ],
+      "preferences": {},
+      "expected": {"eligibility": "eligible", "fit_score": 35.0}
+    },
+    {
+      "id": "skill-mismatch",
+      "job_source_id": "fixture-002",
+      "facts": [
+        {"fact_type": "skill", "value": {"name": "Python"}, "confirmation_status": "confirmed"},
+        {"fact_type": "work_authorization", "value": {"countries": ["IN"], "status": "authorized"}, "confirmation_status": "confirmed"}
+      ],
+      "preferences": {},
+      "expected": {"eligibility": "eligible", "fit_score": 30.0}
+    },
+    {
+      "id": "experience-mismatch",
+      "job_source_id": "fixture-002",
+      "facts": [
+        {"fact_type": "skill", "value": {"name": "SQL"}, "confirmation_status": "confirmed"},
+        {"fact_type": "experience", "value": {"skill": "SQL", "years": 1}, "confirmation_status": "confirmed"},
+        {"fact_type": "skill", "value": {"name": "Excel"}, "confirmation_status": "confirmed"},
+        {"fact_type": "work_authorization", "value": {"countries": ["IN"], "status": "authorized"}, "confirmation_status": "confirmed"}
+      ],
+      "preferences": {},
+      "expected": {"eligibility": "eligible", "fit_score": 35.0, "fit_reason_codes": ["required_experience_missing"]}
+    },
+    {
+      "id": "eligibility-failure",
+      "job_source_id": "fixture-002",
+      "facts": [
+        {"fact_type": "skill", "value": {"name": "SQL"}, "confirmation_status": "confirmed"},
+        {"fact_type": "experience", "value": {"skill": "SQL", "years": 3}, "confirmation_status": "confirmed"},
+        {"fact_type": "skill", "value": {"name": "Excel"}, "confirmation_status": "confirmed"},
+        {"fact_type": "work_authorization", "value": {"countries": ["US"], "status": "authorized"}, "confirmation_status": "confirmed"}
+      ],
+      "preferences": {},
+      "expected": {"eligibility": "ineligible", "eligibility_reason_codes": ["authorization_not_satisfied"]}
+    },
+    {
+      "id": "unknown-authorization",
+      "job_source_id": "fixture-002",
+      "facts": [
+        {"fact_type": "skill", "value": {"name": "SQL"}, "confirmation_status": "confirmed"},
+        {"fact_type": "experience", "value": {"skill": "SQL", "years": 3}, "confirmation_status": "confirmed"},
+        {"fact_type": "skill", "value": {"name": "Excel"}, "confirmation_status": "confirmed"}
+      ],
+      "preferences": {},
+      "expected": {"eligibility": "needs_review", "eligibility_reason_codes": ["authorization_unconfirmed"]}
+    },
+    {
+      "id": "unknown-remote-geography",
+      "job_source_id": "fixture-001",
+      "facts": [
+        {"fact_type": "skill", "value": {"name": "Python"}, "confirmation_status": "confirmed"},
+        {"fact_type": "experience", "value": {"skill": "Python", "years": 5}, "confirmation_status": "confirmed"},
+        {"fact_type": "skill", "value": {"name": "PostgreSQL"}, "confirmation_status": "confirmed"},
+        {"fact_type": "work_authorization", "value": {"countries": ["IN"], "status": "authorized"}, "confirmation_status": "confirmed"}
+      ],
+      "preferences": {"work_modes": ["remote"]},
+      "expected": {"eligibility": "needs_review", "fit_score": 70.0, "eligibility_reason_codes": ["authorization_geography_unknown"], "preference_reason_codes": ["work_mode_match"]}
+    },
+    {
+      "id": "salary-unknown",
+      "job_source_id": "fixture-002",
+      "facts": [
+        {"fact_type": "skill", "value": {"name": "SQL"}, "confirmation_status": "confirmed"},
+        {"fact_type": "experience", "value": {"skill": "SQL", "years": 3}, "confirmation_status": "confirmed"},
+        {"fact_type": "skill", "value": {"name": "Excel"}, "confirmation_status": "confirmed"},
+        {"fact_type": "work_authorization", "value": {"countries": ["IN"], "status": "authorized"}, "confirmation_status": "confirmed"}
+      ],
+      "preferences": {"compensation": {"minimum": 100000, "currency": "INR"}},
+      "expected": {"eligibility": "eligible", "preference_reason_codes": ["compensation_unknown"]}
+    },
+    {
+      "id": "location-preference-difference",
+      "job_source_id": "fixture-002",
+      "facts": [
+        {"fact_type": "skill", "value": {"name": "SQL"}, "confirmation_status": "confirmed"},
+        {"fact_type": "experience", "value": {"skill": "SQL", "years": 3}, "confirmation_status": "confirmed"},
+        {"fact_type": "skill", "value": {"name": "Excel"}, "confirmation_status": "confirmed"},
+        {"fact_type": "work_authorization", "value": {"countries": ["IN"], "status": "authorized"}, "confirmation_status": "confirmed"}
+      ],
+      "preferences": {"location_preferences": ["Remote"]},
+      "expected": {"eligibility": "eligible", "preference_reason_codes": ["location_mismatch"]}
+    },
+    {
+      "id": "remote-preference-match",
+      "job_source_id": "fixture-001",
+      "facts": [
+        {"fact_type": "skill", "value": {"name": "Python"}, "confirmation_status": "confirmed"},
+        {"fact_type": "experience", "value": {"skill": "Python", "years": 5}, "confirmation_status": "confirmed"},
+        {"fact_type": "skill", "value": {"name": "PostgreSQL"}, "confirmation_status": "confirmed"},
+        {"fact_type": "work_authorization", "value": {"countries": ["IN"], "status": "authorized"}, "confirmation_status": "confirmed"}
+      ],
+      "preferences": {"work_modes": ["remote"]},
+      "expected": {"eligibility": "needs_review", "preference_reason_codes": ["work_mode_match"]}
+    },
+    {
+      "id": "sponsorship-incompatible",
+      "job_source_id": "fixture-002",
+      "facts": [
+        {"fact_type": "skill", "value": {"name": "SQL"}, "confirmation_status": "confirmed"},
+        {"fact_type": "experience", "value": {"skill": "SQL", "years": 3}, "confirmation_status": "confirmed"},
+        {"fact_type": "skill", "value": {"name": "Excel"}, "confirmation_status": "confirmed"},
+        {"fact_type": "work_authorization", "value": {"countries": ["IN"], "status": "authorized", "sponsorship_needed": true}, "confirmation_status": "confirmed"}
+      ],
+      "preferences": {"location_preferences": ["Vadodara"]},
+      "expected": {"eligibility": "ineligible", "eligibility_reason_codes": ["sponsorship_unavailable"]}
+    },
+    {
+      "id": "unconfirmed-candidate-facts",
+      "job_source_id": "fixture-002",
+      "facts": [
+        {"fact_type": "skill", "value": {"name": "SQL"}, "confirmation_status": "unknown"},
+        {"fact_type": "skill", "value": {"name": "Excel"}, "confirmation_status": "unknown"},
+        {"fact_type": "work_authorization", "value": {"countries": ["IN"], "status": "authorized"}, "confirmation_status": "confirmed"}
+      ],
+      "preferences": {},
+      "expected": {"eligibility": "eligible", "fit_score": 0.0, "fit_reason_codes": ["required_skill_missing"]}
+    }
+  ]
+}
