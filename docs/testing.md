@@ -128,6 +128,35 @@ Verified:
 - Audits: 3 network events (host and path digest only), run start/completion, `job.created` ×67, and one `job.updated`.
 - No deployment secret appeared in audit metadata.
 
+### Phase 5C application review package tests
+
+`tests/test_phase5c_applications.py` uses sanitized fixtures only and makes no network calls. It covers:
+
+- **Package contents.** Exact bindings: snapshot, content hash, match, CV with PDF/DOCX SHA-256, profile, preferences, source policy, and provider version. Eligibility, fit, and preference stay separate. Also covered: the link-out destination and the data-sharing notice.
+- **Answers.** Answers come only from confirmed facts. Unconfirmed facts (`fact_unconfirmed`), conflicting facts (`conflicting_facts`), and missing sponsorship stay unresolved and block approval. A fact about another country never answers `no`. Unknown or ambiguous job geography leaves both authorization questions unresolved even for an eligible match. Optional questions with no fact are `left_blank`. Salary is never filled from preferences.
+- **Candidate entry.** Values are validated: yes/no, email, length, control characters, unknown question keys. Each change creates a new revision and revokes the earlier approval. Entered values never appear in timeline or audit metadata.
+- **Approval.** It requires the exact displayed hash (`hash_mismatch` otherwise). Approval is idempotent under double clicks and repeated prepares. It expires after 24 hours, can be revoked, and is revoked by skipping. Preparing again reopens a skipped application.
+- **Binding drift.** Each of these marks the package stale and invalidates the approval: a material job change (the CV is also superseded), a non-material snapshot change (rebuilt against the new snapshot with the same CV), preference change, profile change, connector disabled, posting closed, a tampered package (`package_integrity_failed`), and a linked cross-source posting with another open application (`duplicate_suspected`, which clears once one application is skipped).
+- **Preconditions.** Building refuses an unapproved CV, a missing CV or job, changed preferences, or an inactive posting, and nothing is persisted.
+- **Prompt injection.** Job text cannot change answers or the destination.
+- **Tenant isolation.** Covered for every endpoint.
+- **Export and deletion.** Export includes all revisions, approvals, and events. Profile deletion and private-source deletion remove applications.
+- **Ashby path.** A package for an Ashby job (mock transport) resolves authorization for the explicit US address country and links out to `jobs.ashbyhq.com`. Building, reading, and approving make no outbound request.
+- **Nothing can be sent.**
+  - A static AST check confirms the application modules import no HTTP, socket, TLS, SMTP, or browser library, and nothing from the outbound client, task queue, or worker.
+  - The OpenAPI surface has no submit, send, or apply route, and the application routes are exactly the seven reviewed ones.
+  - The database check constraint rejects a `submitted` status.
+  - No task is ever enqueued.
+- **Concurrency (PostgreSQL).** Six simultaneous prepares create one application and one revision. Six simultaneous approvals create one approval.
+
+Evidence (2026-10-03):
+
+- 267 tests pass on PostgreSQL 17 (disposable container, schema built by migrations, none skipped). The SQLite suite passes with the PostgreSQL-only tests skipped.
+- Alembic upgrade → downgrade base → upgrade, and `alembic check` (no drift), pass on both databases, including `0009_application_review_package`.
+- `ruff`, `mypy`, and `compileall` are clean.
+- The frontend passes `npm run build` (type-check and bundle), and `npm audit` reports 0 vulnerabilities.
+- `pip-audit` was not run, because it is not installed in this environment and no Python dependency changed.
+
 ### Running against PostgreSQL
 
 The suite defaults to in-memory SQLite. Set `TEST_DATABASE_URL` to a **disposable** PostgreSQL database, for example `postgresql+psycopg://<user>:<password>@127.0.0.1:<port>/<db>`. In that mode the test run:

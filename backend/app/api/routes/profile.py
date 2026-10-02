@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_current_user, require_csrf
 from app.core.config import get_settings
 from app.db.models import (
+    Application,
     CandidateProfile,
     Consent,
     CVClaim,
@@ -31,6 +32,7 @@ from app.schemas import (
     ProfileVersionCreate,
     ProfileVersionResponse,
 )
+from app.services.applications import delete_applications, export_applications
 from app.services.audit import record_audit
 from app.services.cv_invalidation import supersede_cv_versions
 from app.services.storage import ArtifactStorage
@@ -321,7 +323,9 @@ def export_profile(user: User = Depends(get_current_user), db: Session = Depends
     ).all()
     return {
         "user": {"id": user.id, "email": user.email},
-        "profile": ProfileVersionResponse.model_validate(profile).model_dump(mode="json")
+        "profile": ProfileVersionResponse.model_validate(profile, from_attributes=True).model_dump(
+            mode="json"
+        )
         if profile
         else None,
         "preferences": Preferences.model_validate(preferences.rules_json).model_dump(mode="json")
@@ -330,6 +334,7 @@ def export_profile(user: User = Depends(get_current_user), db: Session = Depends
         "consents": [
             ConsentResponse.model_validate(item).model_dump(mode="json") for item in consents
         ],
+        "applications": export_applications(db, user.id),
         "cv_versions": [
             {
                 "id": version.id,
@@ -370,6 +375,18 @@ def delete_profile(
 ):
     require_csrf(request)
     storage = artifact_storage()
+    # Packages embed profile-derived answers and reference CVs: delete them first.
+    application_count = delete_applications(
+        db,
+        application_ids=list(
+            db.scalars(select(Application.id).where(Application.user_id == user.id)).all()
+        ),
+    )
+    db.execute(
+        delete(CVClaim).where(
+            CVClaim.cv_version_id.in_(select(CVVersion.id).where(CVVersion.user_id == user.id))
+        )
+    )
     db.execute(delete(CVVersion).where(CVVersion.user_id == user.id))
     artifacts = db.scalars(
         select(StoredArtifact).where(StoredArtifact.owner_user_id == user.id)
@@ -413,7 +430,7 @@ def delete_profile(
         user_id=user.id,
         object_type="data_request",
         object_id=data_request.id,
-        metadata={"artifact_count": len(artifacts)},
+        metadata={"artifact_count": len(artifacts), "application_count": application_count},
         request_id=request.state.request_id,
     )
     db.commit()

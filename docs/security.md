@@ -12,6 +12,13 @@ Phase 4 readiness note:
 - **Private-source deletion.** A private source and all data derived from it (postings, snapshots, encrypted raw blobs, analyses, matches, reviews, CVs and their artifacts, run history, queued tasks) can be deleted by its owner via `DELETE /connectors/{id}`. Rows are committed before blobs are removed, and any blob left behind is removed by `python -m app.admin reconcile-artifacts --apply`.
 - **Dependency audits.** pip-audit and npm audit are part of the release checks.
 
+Phase 5C note (application review package, no submission):
+
+- Packages and candidate-entered answers hold contact and work-authorization data. They are owner-scoped, excluded from logs and audit metadata (only question keys, hashes, and IDs are recorded), included in export, and deleted with the profile.
+- The application code has no network, socket, or browser capability. A static test enforces this. The link-out destination is shown to the candidate and never fetched by the backend.
+- An approval binds the exact package hash, expires after 24 hours, and is re-evaluated against live inputs on every read. Nothing consumes an approval in 5C.
+- Job text is untrusted. It is displayed and hashed, never used to choose questions, answers, URLs, or actions.
+
 Phase 5B note: the first live provider is Ashby's anonymous, read-only public Job Posting API.
 
 - It is bound to one exact board path on `api.ashbyhq.com`. Any redirect elsewhere blocks the source.

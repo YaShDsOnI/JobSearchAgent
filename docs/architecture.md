@@ -1,6 +1,6 @@
 # Production architecture
 
-Status: Phase 5B implementation baseline: discovery pipeline, the live-integration security foundation (egress controls, bound HTTP client, scheduler, health monitoring), and one registered read-only live provider (`ashby_job_board`). It is disabled by default and needs per-deployment enablement, the egress allowlist, and a per-board authorization record. Application submission remains out of scope.
+Status: Phase 5C implementation baseline: application review package (preparation and candidate approval only, link-out destination, nothing sent), plus the discovery pipeline, the live-integration security foundation (egress controls, bound HTTP client, scheduler, health monitoring), and one registered read-only live provider (`ashby_job_board`). It is disabled by default and needs per-deployment enablement, the egress allowlist, and a per-board authorization record. Application submission remains out of scope.
 
 ## Decision summary
 

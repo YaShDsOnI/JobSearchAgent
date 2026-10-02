@@ -7,7 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import auth, catalog, cv, health, profile, reviews
+from app.api.routes import applications, auth, catalog, cv, health, profile, reviews
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 
@@ -75,8 +75,9 @@ app.include_router(profile.router, prefix=settings.api_prefix)
 app.include_router(catalog.router, prefix=settings.api_prefix)
 app.include_router(reviews.router, prefix=settings.api_prefix)
 app.include_router(cv.router, prefix=settings.api_prefix)
+app.include_router(applications.router, prefix=settings.api_prefix)
 
 
 @app.get("/", tags=["meta"])
 def root():
-    return {"service": settings.app_name, "version": "0.1.0", "phase": "job-discovery"}
+    return {"service": settings.app_name, "version": "0.1.0", "phase": "application-review-package"}
