@@ -477,6 +477,86 @@ def test_provider_status_classification():
     assert limited.value.retry_after_seconds == 120
 
 
+@pytest.mark.parametrize(
+    ("response", "code"),
+    [
+        (json_response({}, 429), SourceErrorCode.RATE_LIMITED),
+        (json_response({}, 503), SourceErrorCode.PROVIDER_UNAVAILABLE),
+        (json_response({}, 403), SourceErrorCode.PROVIDER_ACCESS_DENIED),
+        (json_response({}, 404), SourceErrorCode.INVALID_PROVIDER_RESPONSE),
+        (
+            httpx.Response(200, headers={"content-type": "text/html"}, content=b"<p>"),
+            SourceErrorCode.INVALID_PROVIDER_RESPONSE,
+        ),
+        (
+            httpx.Response(
+                200, headers={"content-type": "application/json", "content-length": "99999"},
+                content=b"{}",
+            ),
+            SourceErrorCode.RESPONSE_TOO_LARGE,
+        ),
+    ],
+)
+def test_rejected_responses_are_still_recorded_as_network_events(response, code):
+    """Every outbound attempt must reach the audit log, including refused responses."""
+    http = client(_constant(response))
+    with pytest.raises(SourceError) as raised:
+        http.get_json(f"https://{FEED_HOST}/jobs")
+    assert raised.value.code == code
+    [event] = http.events
+    assert (event.outcome, event.status, event.reason) == (
+        "response", response.status_code, code.value,
+    )
+    assert event.host == FEED_HOST
+
+
+class _FailingBody(httpx.SyncByteStream):
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    def __iter__(self):
+        yield b'{"jobs": ['
+        raise self._error
+
+
+@pytest.mark.parametrize(
+    ("error", "code", "reason"),
+    [
+        (httpx.ReadTimeout("read timed out"), SourceErrorCode.PROVIDER_TIMEOUT, "timeout"),
+        (httpx.RemoteProtocolError("peer closed"), SourceErrorCode.PROVIDER_UNAVAILABLE,
+         "transport"),
+        (httpx.ReadError("connection reset"), SourceErrorCode.PROVIDER_UNAVAILABLE, "transport"),
+    ],
+)
+def test_failures_while_streaming_the_body_are_classified_and_recorded(error, code, reason):
+    # The body is streamed after send(); a failure mid-body used to escape as a raw httpx
+    # exception (misfiled by the pipeline as `provider_error`) with no network event.
+    http = client(
+        lambda request: httpx.Response(
+            200, headers={"content-type": "application/json"}, stream=_FailingBody(error)
+        )
+    )
+    with pytest.raises(SourceError) as raised:
+        http.get_json(f"https://{FEED_HOST}/jobs")
+    assert (raised.value.code, raised.value.retryable) == (code, True)
+    [event] = http.events
+    assert (event.outcome, event.status, event.reason) == ("error", 200, reason)
+
+
+def test_rejected_response_is_written_to_the_run_audit(db):
+    connector = feed_connector(db)
+    with pytest.raises(SourceError):
+        run_feed(db, connector, lambda request: json_response({}, 503))
+    events = db.scalars(
+        select(AuditEvent).where(AuditEvent.action == "source.network_request")
+    ).all()
+    assert [(e.metadata_json["status"], e.metadata_json["reason"]) for e in events] == [
+        (503, "provider_unavailable")
+    ]
+    [run] = db.scalars(select(SourceRun).where(SourceRun.connector_id == connector.id)).all()
+    assert run.stats_json["network"]["requests"] == 1
+
+
 def test_request_budget_is_enforced():
     limits = HttpLimits(1, 1, 5, 10_000, 2, max_requests=2)
     http = client(lambda request: json_response({}), limits=limits)

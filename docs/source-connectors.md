@@ -288,7 +288,7 @@ Redirects are followed manually, at most `SOURCE_HTTP_MAX_REDIRECTS` (default 3)
 |---|---|
 | 429 | `rate_limited` (retryable, bounded `Retry-After`) |
 | 5xx | `provider_unavailable` (retryable) |
-| Timeout | `provider_timeout` (retryable) |
+| Timeout (connecting, waiting for headers, or while streaming the body) | `provider_timeout` (retryable) |
 | 401 / 403 | `provider_access_denied`, blocked. Access control is respected, never retried around |
 | Other status, wrong content type, malformed/empty JSON | `invalid_provider_response` |
 | Egress denial | `egress_denied`, blocked; the task is never retried |
@@ -308,7 +308,7 @@ Redirects are followed manually, at most `SOURCE_HTTP_MAX_REDIRECTS` (default 3)
 
 ### Audit of live activity
 
-- Each outbound attempt writes `source.network_request` or `source.egress_denied`. The event records the host, a path digest (no path, query, headers, or body), status, bytes, duration, redirect count, and denial reason, and is attached to the run and owner.
+- Each outbound attempt writes `source.network_request` or `source.egress_denied`. The event records the host, a path digest (no path, query, headers, or body), status, bytes, duration, redirect count, and denial reason, and is attached to the run and owner. Responses that are received and then refused (429, 5xx, 401/403, unexpected status or content type, oversized) are recorded too, with the error code as `reason`. A connection lost while streaming the body is recorded as an `error` event and classified as `provider_timeout` or `provider_unavailable` (retryable).
 - Run stats include a `network` summary.
 - Health transitions write `source.health_changed` and log a warning when a source enters `failing`, `suspended`, or `blocked`.
 
