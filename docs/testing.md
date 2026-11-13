@@ -226,6 +226,23 @@ Track, with privacy-safe aggregation:
 
 Do not optimize for application volume alone. False positives, fabricated claims, duplicate submissions, and policy violations are higher-severity failures than low throughput.
 
+## Local CI
+
+There is no hosted CI (decision 2026-11-13: checks run locally). `python tools/ci.py` is the pipeline and must pass before a branch is merged. Stages:
+
+| Stage | Default | What it runs |
+|---|---|---|
+| `setup` | always | `backend/.venv` with the dev extras |
+| `lint` | quick | ruff, mypy, compileall |
+| `test-sqlite` | quick | full pytest suite on in-memory SQLite |
+| `test-postgres` | yes | full suite, Alembic upgrade → downgrade → upgrade, and `alembic check`, on a disposable memory-backed PostgreSQL 17 container (random password and port, always removed) |
+| `audit` | yes | `pip-audit` of the backend environment (needs network) |
+| `frontend` | yes | `tsc --noEmit` and the Vite production build |
+| `images` | yes | backend and egress-proxy image builds |
+| `proxy-verify` | opt-in (`--with proxy-verify`) | the real egress proxy checks from `deploy/egress-proxy/verify.py` in an isolated Docker network (needs network) |
+
+`--quick` runs setup, lint, and SQLite tests (no Docker, no network). `--only`, `--skip`, and `--fail-fast` select stages. `--install-hook` adds a git pre-push hook that runs `--quick` (skip once with `git push --no-verify`). First full run, 2026-11-13: every stage passed, including `proxy-verify` (12/12).
+
 ## Release gates
 
 No phase advances unless:
