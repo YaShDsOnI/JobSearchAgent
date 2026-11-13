@@ -55,6 +55,8 @@ Outside development and test, `SOURCE_NETWORK_ACCESS_ENABLED=true` also requires
 
 ## Checks
 
+Run everything with the local CI runner from the repository root: `python tools/ci.py` (or `--quick` for lint and SQLite tests). See `../docs/testing.md`, "Local CI". The individual commands are:
+
 - `python -m pytest` (in-memory SQLite)
 - `TEST_DATABASE_URL=postgresql+psycopg://<user>:<password>@127.0.0.1:<port>/<disposable_db> python -m pytest` (PostgreSQL). The target schema is dropped and rebuilt from the migrations, so use a throwaway database only.
 - `python -m ruff check app migrations tests`
