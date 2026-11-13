@@ -302,7 +302,7 @@ Redirects are followed manually, at most `SOURCE_HTTP_MAX_REDIRECTS` (default 3)
 
 ### Credentials
 
-- Connector config may hold only a reference: `{"credential": {"ref": "env:JFA_SOURCE_SECRET_<NAME>", "header": "Authorization", "scheme": "Bearer"}}`. The value is read from the process environment (a secret manager can replace this later) when a run starts.
+- Connector config may hold only a reference: `{"credential": {"ref": "file:<name>", "header": "Authorization", "scheme": "Bearer"}}`. The value is read when a run starts, from a secret-manager-projected file or (development and test only) from `env:JFA_SOURCE_SECRET_<NAME>`. See "Secret references from files" below.
 - Literal secret-looking keys in config (`api_key`, `token`, `password`, ...) block the connector (`inline_secret_in_config`). Malformed or unset references block it (`credential_unavailable`). `Host`/`Cookie` headers cannot be set.
 - Resolved values are registered with the redactor (`app/core/redaction.py`), which scrubs them and credential-shaped patterns from log lines, error details, and audit metadata. `repr()` of credentials and clients never reveals them.
 
@@ -342,6 +342,88 @@ Redirects are followed manually, at most `SOURCE_HTTP_MAX_REDIRECTS` (default 3)
 | `blocked` | `blocked` |
 | `suspended` (5+ consecutive failures, circuit open) | `suspended` |
 
+## Deployment enforcement
+
+Decision record: `docs/roadmap.md`, "Decision record: live-access deployment controls (2026-11-13)". The reference deployment is `compose.yaml` with profile `app`. Production platforms must provide the same properties with their own primitives, for example Kubernetes `NetworkPolicy` instead of an internal Docker network.
+
+### Topology
+
+| Service | Networks | Role |
+|---|---|---|
+| `postgres` | `default`, `backend` | System of record |
+| `migrate` | `backend` | One-shot `alembic upgrade head`; the app services wait for it |
+| `api` | `backend`, `edge` | HTTP API. `edge` exists only to publish the port; the API never runs providers |
+| `worker` | `backend` | `python -m app.worker --loop`: executes queued ingestion tasks |
+| `scheduler` | `backend` | `python -m app.scheduler --loop`: enqueues due runs and sends health alerts |
+| `egress-proxy` | `backend`, `egress` | The only container with a route to the internet |
+
+`backend` is `internal: true`: containers on it can reach each other but have no route out and no external DNS. The worker and scheduler are attached to nothing else.
+
+### Network-layer egress enforcement
+
+The egress proxy (`deploy/egress-proxy/`) is Squid 6.12 on Alpine 3.22. It is configured to:
+
+- allow `CONNECT` only, to port 443 only. Every other method, and every other port, is refused;
+- allow only hosts from `EGRESS_ALLOWLIST` (the union of `SOURCE_EGRESS_ALLOWLIST` and `ALERT_WEBHOOK_HOST`). Entries have the application's semantics: an exact host, or `*.domain` for subdomains only, never the apex. They are compiled to anchored regular expressions with reverse DNS disabled, so an IP-literal `CONNECT` never matches;
+- refuse any destination that resolves to a loopback, private, link-local (including cloud metadata), CGNAT, reserved, multicast, documentation, or unique-local address;
+- keep no cache, add no forwarding headers, and log only the time, client, status, method, and `host:443`. TLS is end to end, so paths, queries, headers, and bodies never reach the proxy.
+
+The application side (`SOURCE_EGRESS_PROXY_URL=http://egress-proxy:3128`):
+
+- `ProxyTunnelTransport` tunnels each request with `CONNECT host:443` and then performs TLS to the target. The certificate and SNI are verified against the target hostname, so the proxy cannot read or alter the traffic.
+- Its network backend can connect only to the configured proxy host and port. A connection attempt to anything else is denied (`EgressDenied: proxy_only`).
+- Before every request and every redirect hop, the guard still applies all URL checks: HTTPS, port 443, no userinfo or IP literals, denylist, both allowlists, and path prefixes. The proxy is never a way around them.
+- In proxy mode the application does not resolve DNS itself. The proxy resolves and refuses non-public answers, because a resolution in the worker would fail by design (no external DNS). The host allowlist is enforced by both layers; the destination-address check is enforced by the proxy, and the worker cannot open any connection that skips the proxy.
+- The proxy URL must be `http://host:port` with an explicit port and no credentials, path, or query. The hop to the proxy is plain HTTP inside the private network; the tunneled traffic is TLS.
+- Outside `development` and `test`, `SOURCE_NETWORK_ACCESS_ENABLED=true` without `SOURCE_EGRESS_PROXY_URL` fails startup.
+
+Without a proxy URL (development and tests), the direct DNS-pinning transport described under "Live network controls" is used unchanged.
+
+### Secret references from files
+
+Credential references accept two forms:
+
+| Reference | Source | Allowed in |
+|---|---|---|
+| `env:JFA_SOURCE_SECRET_<NAME>` | Process environment | `development`, `test` only |
+| `file:<name>` | `<SECRETS_DIR>/<name>` | All environments |
+
+`<name>` is 1 to 128 characters of `a-z`, `0-9`, `_`, `.`, `-`. It starts with a letter or digit and contains no path separators. The resolved real path must stay inside `SECRETS_DIR` (Kubernetes projected secrets are symlinks inside the mount and are accepted; links that leave it are refused). The file must be a regular file of at most 8 KiB, and one trailing newline is removed. An empty or missing file, or an unset `SECRETS_DIR`, blocks the run with `credential_unavailable`. Files are read at the start of each run, so rotation needs no restart. Resolved values are registered with the redactor as before.
+
+Docker and Kubernetes secrets, Vault Agent templates, and the AWS, GCP, and Azure secret-store CSI drivers all deliver secrets as files, so any of them can sit behind this interface without code changes.
+
+### Health alert routing
+
+When `ALERT_WEBHOOK_REF` and `ALERT_WEBHOOK_HOST` are both set, each scheduler tick (and `python -m app.admin send-health-alerts`) evaluates the health report and sends:
+
+- `firing` when a connector enters an alert state (`failure`, `blocked`, `suspended`, or `overdue`), when its state changes while alerting, and as a reminder every 6 hours while it stays in alert;
+- `resolved` once, when a connector that was alerting recovers or is disabled.
+
+The last notification per connector is read from the audit log (`source.alert_notified`), so a restart does not re-send. Run one scheduler: two schedulers ticking at the same moment could both send the same notification (a duplicate, never a missed alert). A failed delivery writes `source.alert_failed` and is retried on the next tick. An alerting error never stops scheduling.
+
+Payload (JSON `POST`):
+
+```json
+{"source": "jobfinderagent", "kind": "firing", "connector_id": "...", "connector_name": "ashby-acme",
+ "scope": "shared", "state": "suspended", "overdue": false, "consecutive_failures": 5,
+ "last_error_code": "provider_unavailable", "at": "2026-11-13T10:00:00Z"}
+```
+
+`connector_name` is sent for shared sources only. A private source's name was typed by its owner and is replaced by `null`. Payloads carry no candidate, profile, job, or application data. Any relay that accepts a JSON webhook (Alertmanager, PagerDuty or Opsgenie integrations, a chat webhook) can route it to on-call.
+
+Delivery controls:
+
+- The webhook URL comes from a secret reference (it usually embeds a token). It is never logged or audited.
+- Its host must equal `ALERT_WEBHOOK_HOST` exactly. The URL alone cannot redirect alerts elsewhere.
+- Delivery uses the egress guard (HTTPS, port 443, public address) and the proxy when one is configured. Redirects are not followed, and the timeout is 10 seconds. Any status other than 2xx is a failure.
+- Alerting is off unless both settings are present, and it is independent of `SOURCE_NETWORK_ACCESS_ENABLED`.
+
+### Continuous worker and scheduler
+
+- `python -m app.worker --loop [--poll-seconds 5]` claims and runs tasks until stopped. It uses a fresh database session per task.
+- `python -m app.scheduler --loop [--tick-seconds 60]` ticks until stopped.
+- Both stop on `SIGTERM` or `SIGINT` after finishing the current task or tick, so a deploy never abandons a claimed task mid-run. Task leases still cover crashes.
+
 ## Adding further live connectors
 
-The Phase 5A controls above are in place. A new provider still needs, before merge: authorization basis and evidence, terms version and review, fields collected, rate limits and backoff, failure modes, domain allowlist, sanitized contract fixtures (pagination, malformed payloads, rate limits, timeouts, closed jobs), a kill-switch test, and a security review of the new data flow. Enabling it in production also requires the remaining prerequisites in `docs/roadmap.md` (network-layer egress enforcement, production secret manager, alert routing).
+The Phase 5A controls above are in place. A new provider still needs, before merge: authorization basis and evidence, terms version and review, fields collected, rate limits and backoff, failure modes, domain allowlist, sanitized contract fixtures (pagination, malformed payloads, rate limits, timeouts, closed jobs), a kill-switch test, and a security review of the new data flow. Enabling it in production also requires the deployment controls under "Deployment enforcement" to be running in that environment (see the prerequisites in `docs/roadmap.md`), and its host added to both `SOURCE_EGRESS_ALLOWLIST` and the egress proxy allowlist.

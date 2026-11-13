@@ -21,7 +21,7 @@ This shape keeps transaction boundaries and operational reasoning simple. It can
 1. Candidate browser to API: authenticated, CSRF-protected web requests; no model or worker trust is inherited from the browser.
 2. API/worker to database/object storage: private network, service identity, least-privilege role.
 3. Worker to model provider: outbound allowlist, minimized and redacted payload, provider/data-region configuration, request budget.
-4. Worker to job source: deployment and connector host allowlists, SSRF/DNS-rebinding-safe pinned connections, redirect re-validation, time/size limits, normal rate limits, source policy check, no bypass (`backend/app/services/sources/egress.py`).
+4. Worker to job source: deployment and connector host allowlists, SSRF/DNS-rebinding-safe pinned connections (or, in deployment, a tunnel through the egress proxy, which enforces the allowlist and public-address rule at the network layer), redirect re-validation, time/size limits, normal rate limits, source policy check, no bypass (`backend/app/services/sources/egress.py`, `deploy/egress-proxy/`).
 5. Browser runner to external application: one approved destination, isolated context, no arbitrary model-controlled navigation.
 6. Untrusted source text to model: data-only boundary; never treated as instructions or tool permissions.
 
@@ -85,7 +85,7 @@ For the first deployment:
 
 - Managed PostgreSQL in a private network.
 - API container behind TLS termination and a web application firewall/rate limiter.
-- Worker container with no inbound public access.
+- Worker container with no inbound public access, on an internal-only network whose only route out is the CONNECT-only egress proxy (reference deployment: `compose.yaml` profile `app`; see `docs/source-connectors.md`, "Deployment enforcement").
 - Browser runner in a more restricted network namespace with per-job ephemeral browser context.
 - Private object bucket with KMS/envelope encryption and signed, short-lived download URLs.
 - Secret manager/KMS; no credentials in environment files committed to the repository.

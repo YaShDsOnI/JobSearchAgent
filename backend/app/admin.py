@@ -6,6 +6,7 @@
     python -m app.admin reconcile-artifacts [--apply] [--grace-minutes 60]
     python -m app.admin set-schedule --connector NAME (--interval-minutes N | --disable)
     python -m app.admin health-report   # exit code 3 when any source needs attention
+    python -m app.admin send-health-alerts   # exit code 4 when a delivery failed
     python -m app.admin register-ashby --name N --board B --employer E --basis official_api \
         --evidence-ref REF --reviewed-by WHO --terms-version V [--approve] [--owner-email X]
     python -m app.admin set-connector-enabled --connector N (--enable | --disable) --reason R
@@ -15,6 +16,7 @@ import argparse
 import getpass
 import json
 import sys
+from dataclasses import asdict
 from datetime import timedelta
 
 from sqlalchemy import select
@@ -24,6 +26,7 @@ from app.db.models import SourceConnector
 from app.db.session import SessionLocal
 from app.services.artifact_lifecycle import reconcile_artifacts
 from app.services.operators import RoleChangeError, list_operators, set_user_role
+from app.services.sources.alerts import send_health_alerts
 from app.services.sources.connectors import (
     ConnectorRegistrationError,
     register_ashby_connector,
@@ -58,6 +61,7 @@ def main(argv: list[str] | None = None) -> int:
     interval.add_argument("--interval-minutes", type=int)
     interval.add_argument("--disable", action="store_true")
     commands.add_parser("health-report")
+    commands.add_parser("send-health-alerts")
     ashby = commands.add_parser("register-ashby")
     for flag in ("--name", "--board", "--employer", "--basis", "--evidence-ref",
                  "--reviewed-by", "--terms-version"):
@@ -163,6 +167,14 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(health, default=str, sort_keys=True))
             if any(item["alert"] for item in health):
                 return 3
+        elif args.command == "send-health-alerts":
+            if not get_settings().alerting_enabled:
+                print("error: ALERT_WEBHOOK_REF/ALERT_WEBHOOK_HOST not set", file=sys.stderr)
+                return 1
+            outcomes = send_health_alerts(db)
+            print(json.dumps([asdict(item) for item in outcomes], sort_keys=True))
+            if any(not item.delivered for item in outcomes):
+                return 4
         else:
             report = reconcile_artifacts(
                 db,

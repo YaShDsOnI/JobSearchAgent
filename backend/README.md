@@ -22,11 +22,12 @@ The fixture loader performs no network access and creates records whose URLs use
 - Reconcile encrypted artifacts left behind by interrupted work:
   `python -m app.admin reconcile-artifacts` (dry run) or `... --apply`. Exit code 2 means rows reference missing blobs, which needs investigation.
 
-- Schedule a connector: `python -m app.admin set-schedule --connector <name> --interval-minutes 60` (or `--disable`). Run `python -m app.scheduler --once` from a timer (or `--loop`) to enqueue due runs, and `python -m app.worker` to execute them.
+- Schedule a connector: `python -m app.admin set-schedule --connector <name> --interval-minutes 60` (or `--disable`). Run `python -m app.scheduler --once` from a timer (or `--loop`) to enqueue due runs, and `python -m app.worker` (or `--loop`) to execute them. Both loops stop cleanly on SIGTERM/SIGINT after the current task or tick.
 - Register the Ashby public job board provider (read-only; starts disabled). This needs a recorded product-owner authorization for the specific board:
   `python -m app.admin register-ashby --name <n> --board <BoardName> --employer "<Employer>" --basis official_api --evidence-ref <url> --reviewed-by <role> --terms-version <v> [--approve]`.
   Then run `python -m app.admin set-connector-enabled --connector <n> --enable --reason "<why>"` (use `--disable` as the kill switch). Live fetching also requires `SOURCE_NETWORK_ACCESS_ENABLED=true` and `SOURCE_EGRESS_ALLOWLIST=api.ashbyhq.com`.
 - Source health: `GET /api/v1/connectors/health` or `python -m app.admin health-report` (exit code 3 when a source is failing, blocked, suspended, or overdue). Suspended sources stay suspended until reset.
+- Health alerts: set `ALERT_WEBHOOK_REF` (for example `file:alert_webhook`) and `ALERT_WEBHOOK_HOST`. The scheduler loop then sends `firing`/`resolved` notifications. `python -m app.admin send-health-alerts` sends them once (exit code 4 when a delivery failed).
 
 ### Live network settings (off by default)
 
@@ -39,7 +40,13 @@ The fixture loader performs no network access and creates records whose URLs use
 - `SOURCE_HTTP_MAX_REDIRECTS`
 - `SOURCE_HTTP_MAX_REQUESTS_PER_RUN`
 
-Connector credentials are never stored in the database. Configure a reference such as `env:JFA_SOURCE_SECRET_<NAME>`, and provide the value through the environment or a secret manager.
+Connector credentials are never stored in the database. Configure a reference: `file:<name>` reads `<SECRETS_DIR>/<name>` (a secret-manager-projected file; required outside development and test), and `env:JFA_SOURCE_SECRET_<NAME>` reads the environment (development and test only).
+
+Outside development and test, `SOURCE_NETWORK_ACCESS_ENABLED=true` also requires `SOURCE_EGRESS_PROXY_URL` (for example `http://egress-proxy:3128`). Every source request is then tunneled through that CONNECT-only proxy, and no other connection can be opened.
+
+## Reference deployment
+
+`docker compose --profile app up --build` (from the repository root) runs migrations, the API (on `127.0.0.1:8000`), a continuous worker and scheduler, and the egress proxy. The worker and scheduler sit on an internal network whose only route out is the proxy. Put `POSTGRES_PASSWORD`, `SESSION_SECRET`, `ARTIFACT_ENCRYPTION_KEY`, and any `SOURCE_*` and `ALERT_*` settings in a root `.env` (never committed). Put secret files in `deploy/secrets/` (git-ignored), or point `SECRETS_HOST_DIR` elsewhere. Before enabling network access in any deployed environment, run `deploy/egress-proxy/verify.py` there (see `../docs/testing.md`). Design: `../docs/source-connectors.md`, "Deployment enforcement".
 
 ## Checks
 

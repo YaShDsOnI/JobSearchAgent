@@ -157,6 +157,22 @@ Evidence (2026-10-03):
 - The frontend passes `npm run build` (type-check and bundle), and `npm audit` reports 0 vulnerabilities.
 - `pip-audit` was not run, because it is not installed in this environment and no Python dependency changed.
 
+### Live-access deployment controls
+
+`tests/test_live_access_deployment.py` makes no network calls. It covers:
+
+- **Configuration.** Outside development and test, enabling network access without `SOURCE_EGRESS_PROXY_URL` fails startup. Malformed proxy URLs are rejected (wrong scheme, no port, credentials, path, query). Alert settings must come as a pair and pin one exact host.
+- **Proxy tunnel.** The only TCP connection goes to the proxy. The target appears only in `CONNECT host:443` and TLS SNI. Path and query travel only inside TLS. The backend refuses any other host or port. The transport re-checks scheme, port, and host even if the guard is bypassed. Guard checks still apply without local DNS. The pipeline picks the proxy transport from settings. A wiring assertion catches an httpx/httpcore upgrade that drops the proxy-only backend.
+- **File secrets.** Resolution, trailing-newline handling, and rotation without restart. Traversal, absolute paths, hidden, uppercase, nested, missing, empty, oversized, multi-line, directory, and symlink-escape references are refused (the symlink case needs a host that permits symlinks). `env:` references are refused outside development and test.
+- **Run loops.** The stop signal interrupts waits. The worker drains in batch mode, polls in loop mode until stopped, and processes nothing after a stop. A scheduler tick survives an alerting failure without logging the webhook URL.
+- **Alerts.** Fire once, deduplicate, remind after 6 hours, re-fire on a state change, resolve once on recovery or disable. Private-source names are withheld. Failed deliveries are audited and retried, and the webhook URL and token never reach the audit log or logs. Host pinning holds, redirects are not followed, alerting stays off unless configured, and a missing secret fails closed.
+
+**Egress proxy verification (manual, Docker).** `deploy/egress-proxy/verify.py` runs inside a container attached only to the internal network. It checks that there is no direct route and no external DNS. It checks that the proxy denies non-allowlisted hosts, port 80, IP literals, the proxy itself as a target, plain HTTP forwarding, the apex of a wildcard entry, and an allowlisted host that resolves to a non-public address. Finally it checks that TLS through the tunnel verifies end to end. Run it against every deployed environment before turning on network access. Results on 2026-11-13 (Squid 6.12, Alpine 3.22, Docker 29.3):
+
+- Isolated test network: 12/12 checks passed. Proxy logs confirmed each denial (`TCP_DENIED/403`) and the allowed tunnel (`TCP_TUNNEL/200`). Wildcard subdomains, case variants, and trailing dots were allowed. Look-alike hosts (`evil-example.com`, `example.com.evil.net`) and clients outside `EGRESS_CLIENT_CIDR` were refused. Invalid allowlist entries (`*`, `*.com`, IPs, spaces, a leading dot) stop the proxy at startup with exit code 64. An empty allowlist denies everything.
+- Full reference deployment (`compose.yaml` profile `app`, `APP_ENV=production`, isolated project and volumes): migrations ran to head and the API reported ready. A scheduled fixture connector was enqueued by the scheduler and run by the worker. From inside the worker, the application's own client tunneled through the proxy (`TCP_TUNNEL/200` from the worker address). Non-allowlisted hosts and plain HTTP were refused by the application before reaching the proxy, and direct connections failed. `verify.py` from the worker passed 10/10. `docker compose stop` ended the worker and scheduler in under a second with exit code 0.
+- File secrets on Linux (backend image): a Kubernetes-style projected symlink (`name -> ..data/name`) resolved, and a symlink escaping `SECRETS_DIR` was refused.
+
 ### Running against PostgreSQL
 
 The suite defaults to in-memory SQLite. Set `TEST_DATABASE_URL` to a **disposable** PostgreSQL database, for example `postgresql+psycopg://<user>:<password>@127.0.0.1:<port>/<db>`. In that mode the test run:

@@ -16,8 +16,8 @@ from urllib.parse import urljoin, urlsplit
 import httpx
 
 from app.core.config import Settings
-from app.services.sources.credentials import ConnectorCredential
-from app.services.sources.egress import EgressDenied, EgressGuard, PinnedTransport
+from app.services.sources.credentials import ConnectorCredential, SecretValue
+from app.services.sources.egress import EgressDenied, EgressGuard, build_transport
 from app.services.sources.errors import (
     InvalidProviderResponseError,
     ProviderUnavailableError,
@@ -89,6 +89,7 @@ class ConnectorHttpClient:
     limits: HttpLimits
     credential: ConnectorCredential | None = None
     transport: httpx.BaseTransport | None = None
+    proxy: tuple[str, int] | None = None
     clock: Callable[[], float] = time.monotonic
     events: list[NetworkEvent] = field(default_factory=list)
     _requests: int = 0
@@ -100,7 +101,7 @@ class ConnectorHttpClient:
     def _http(self) -> httpx.Client:
         if self._client is None:
             self._client = httpx.Client(
-                transport=self.transport or PinnedTransport(self.guard),
+                transport=self.transport or build_transport(self.guard, self.proxy),
                 follow_redirects=False,
                 trust_env=False,  # Never route through environment-configured proxies.
                 timeout=httpx.Timeout(
@@ -282,3 +283,61 @@ def _retry_after(response: httpx.Response) -> int | None:
     if value and value.strip().isdigit():
         return max(1, min(int(value.strip()), 3600))
     return None
+
+
+ALERT_USER_AGENT = "JobFinderAgent/alerts"
+WEBHOOK_TIMEOUT_SECONDS = 10.0
+
+
+class WebhookDeliveryError(Exception):
+    """Delivery failed. The message never contains the webhook URL (it embeds a token)."""
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(f"Webhook delivery failed ({reason})")
+
+
+@dataclass
+class WebhookSender:
+    """POSTs JSON to one operator-configured host through the egress controls.
+
+    The guard pins the only permitted host; redirects are never followed; the URL (a
+    secret) is passed in per call and never stored, logged, or put in an exception.
+    """
+
+    guard: EgressGuard
+    transport: httpx.BaseTransport | None = None
+    proxy: tuple[str, int] | None = None
+    timeout: float = WEBHOOK_TIMEOUT_SECONDS
+
+    def __repr__(self) -> str:
+        return f"WebhookSender(hosts={self.guard.policy.connector_hosts!r})"
+
+    def post_json(self, url: SecretValue, payload: Mapping[str, Any]) -> int:
+        target = url.reveal()
+        try:
+            self.guard.check_url(target)
+        except EgressDenied as exc:
+            raise WebhookDeliveryError(f"egress_denied:{exc.reason}") from None
+        try:
+            with httpx.Client(
+                transport=self.transport or build_transport(self.guard, self.proxy),
+                follow_redirects=False,
+                trust_env=False,
+                timeout=httpx.Timeout(self.timeout),
+            ) as client:
+                response = client.post(
+                    target,
+                    content=json.dumps(payload, separators=(",", ":")).encode("utf-8"),
+                    headers={"Content-Type": "application/json", "User-Agent": ALERT_USER_AGENT},
+                )
+        except EgressDenied as exc:
+            raise WebhookDeliveryError(f"egress_denied:{exc.reason}") from None
+        except httpx.TimeoutException:
+            raise WebhookDeliveryError("timeout") from None
+        except httpx.HTTPError as exc:
+            # httpx messages can include the URL; only the exception type is kept.
+            raise WebhookDeliveryError(f"transport:{type(exc).__name__}") from None
+        if not 200 <= response.status_code < 300:
+            raise WebhookDeliveryError(f"status_{response.status_code}")
+        return response.status_code
