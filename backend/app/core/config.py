@@ -58,6 +58,14 @@ class Settings(BaseSettings):
     # Health alert webhook: a secret reference to the URL, and the only host it may use.
     alert_webhook_ref: str = Field(default="", validation_alias="ALERT_WEBHOOK_REF")
     alert_webhook_host: str = Field(default="", validation_alias="ALERT_WEBHOOK_HOST")
+    # Phase 6 global kill switch for the application adapter (sandbox ATS only).
+    application_submission_enabled: bool = Field(
+        default=False, validation_alias="APPLICATION_SUBMISSION_ENABLED"
+    )
+    # The local sandbox ATS: the only destination an adapter may submit to (loopback only).
+    sandbox_ats_origin: str = Field(
+        default="http://127.0.0.1:8100", validation_alias="SANDBOX_ATS_ORIGIN"
+    )
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -111,6 +119,13 @@ class Settings(BaseSettings):
                 raise RuntimeError(f"SOURCE_EGRESS_ALLOWLIST entry is not a valid host: {entry}")
         self._validate_egress_proxy()
         self._validate_alerting()
+        self._validate_sandbox_origin()
+
+    def _validate_sandbox_origin(self) -> None:
+        if canonical_sandbox_origin(self.sandbox_ats_origin) is None:
+            raise RuntimeError(
+                "SANDBOX_ATS_ORIGIN must be http://127.0.0.1:<port> or http://localhost:<port>"
+            )
 
     def _validate_egress_proxy(self) -> None:
         raw = self.source_egress_proxy_url.strip()
@@ -147,6 +162,27 @@ class Settings(BaseSettings):
             raise RuntimeError("ALERT_WEBHOOK_REF and ALERT_WEBHOOK_HOST must be set together")
         if host and not _is_valid_hostname(host):
             raise RuntimeError("ALERT_WEBHOOK_HOST must be a single exact hostname")
+
+
+def canonical_sandbox_origin(value: str) -> str | None:
+    """`scheme://host:port` for a loopback sandbox origin, else None (never a real host)."""
+    try:
+        parts = urlsplit(value.strip())
+        port = parts.port
+    except ValueError:
+        return None
+    if (
+        parts.scheme != "http"
+        or parts.hostname not in {"127.0.0.1", "localhost"}
+        or port is None
+        or parts.username is not None
+        or parts.password is not None
+        or parts.path not in {"", "/"}
+        or parts.query
+        or parts.fragment
+    ):
+        return None
+    return f"http://{parts.hostname}:{port}"
 
 
 def _is_valid_hostname(host: str) -> bool:

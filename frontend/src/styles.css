@@ -102,3 +102,12 @@ code { font-size: .78rem; overflow-wrap: anywhere; }
   .tracker-table td[data-label]::before { color: #63777c; content: attr(data-label); display: block; font-size: .72rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
   .tracker-actions { text-align: left; }
 }
+
+.submission-panel { border-top: 1px solid #e1e9e9; margin-top: 1.25rem; padding-top: 1rem; }
+.submission-fields { border-collapse: collapse; margin-bottom: .75rem; width: 100%; }
+.submission-fields th, .submission-fields td { border-bottom: 1px solid #eef3f3; padding: .5rem .6rem; text-align: left; vertical-align: top; }
+.submission-fields th[scope="row"] { color: #38535a; font-weight: 700; width: 45%; }
+.submission-fields thead th { color: #63777c; font-size: .78rem; letter-spacing: .06em; text-transform: uppercase; }
+.status-dot.working { animation: pulse 1s ease-in-out infinite; background: #d39b2a; }
+@keyframes pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .status-dot.working { animation: none; } }

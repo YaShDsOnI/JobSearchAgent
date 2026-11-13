@@ -192,6 +192,32 @@ The route inventory in `tests/test_phase5c_applications.py` lists `POST /applica
 
 Manual browser check (2026-11-13, Chrome on Windows, local throwaway database): the tracker summary, stage chips, search, inline stage change, adding an entry, the duplicate warning ("Add it anyway" or "Go back"), and "Mark as applied" on a review package (with the tracker refreshing and the package showing as frozen) all worked with no console errors. This check found and fixed two layout issues (label alignment, column widths shifting under filters) and a form that kept a cancelled draft.
 
+### Phase 6 sandbox adapter tests
+
+`tests/test_phase6_submission.py` uses a fake runner for the state machine and real Playwright Chromium against the sandbox ATS (`backend/sandbox_ats/`), started in-process on a random loopback port. The browser tests skip only when Chromium is not installed; `tools/ci.py` installs it.
+
+State machine:
+
+- Only sandbox jobs can be submitted. Every gate refuses start: the global switch, the destination switch, the review-hash mismatch, and a missing approval. A refused start creates no row and no task.
+- `SANDBOX_ATS_ORIGIN` must be loopback HTTP with a port.
+- Happy path: fill, then final review, then confirm (idempotent), then exactly one click, then `submitted` with a confirmation. The result is a `sandbox_adapter` tracker entry and the application shows as applied. The decrypted CV is deleted after the run, and sent values never reach the audit log.
+- Closing the destination switch between confirm and the click prevents the click. Turning off the global switch after confirm blocks the run before the browser starts.
+- A task redelivered after `submit_clicked_at` never clicks again (`submitted_unverified`). A crash after the click is unverified; a crash before it is `failed` with no click recorded.
+- An unverified submission is resolved by the candidate, never retried, and cannot be cancelled.
+- Pause and cancel work. Manual "Mark as applied" is refused while a submission is live.
+- Export and deletion cover submissions.
+- A static check confirms that only `submission/browser.py` imports a browser library and that no submission module imports a network client.
+
+Real browser: the full flow sends exactly the reviewed values and the packaged CV (verified by SHA-256 on the sandbox side), and unanswered fields stay blank. CAPTCHA, a login wall, an unknown required field, an attestation, an off-site redirect, and a dialog each pause, and nothing reaches the sandbox. Form drift between fill and submit pauses with `form_changed` and no click. A missing confirmation is `submitted_unverified` after exactly one received submission.
+
+Manual browser check (2026-11-13, Chrome on Windows, throwaway database, sandbox on `127.0.0.1:8100`, separate `python -m app.runner --loop`):
+
+- Match, CV, approve, and prepare worked for a sandbox job.
+- "Fill the sandbox form for review" showed the read-back labels and values, with "Left blank" for unanswered fields, while the sandbox still had 0 submissions.
+- "Confirm and submit to sandbox" produced confirmation `SBX-AF97303A`. The sandbox received exactly the reviewed values and the CV.
+- The tracker showed a "Sandbox submission" entry.
+- There were no console errors. The check found two wording fixes: the applied notice for adapter submissions, and the dashboard intro.
+
 ### Running against PostgreSQL
 
 The suite defaults to in-memory SQLite. Set `TEST_DATABASE_URL` to a **disposable** PostgreSQL database, for example `postgresql+psycopg://<user>:<password>@127.0.0.1:<port>/<db>`. In that mode the test run:

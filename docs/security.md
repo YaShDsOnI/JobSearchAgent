@@ -19,6 +19,20 @@ Phase 5C note (application review package, no submission):
 - An approval binds the exact package hash, expires after 24 hours, and is re-evaluated against live inputs on every read. Nothing consumes an approval in 5C.
 - Job text is untrusted. It is displayed and hashed, never used to choose questions, answers, URLs, or actions.
 
+Phase 6 note (application tracker and sandbox browser adapter, approved 2026-11-13):
+
+- The only adapter destination is the local sandbox ATS on loopback. Startup refuses a `SANDBOX_ATS_ORIGIN` that is not `127.0.0.1` or `localhost`, and no real employer can be targeted.
+- Three kill switches, all read fresh, must allow a run, and they are checked again immediately before the single submit click:
+  - `APPLICATION_SUBMISSION_ENABLED` (default `false`);
+  - the database-backed destination switch;
+  - a bounded attempt budget.
+- A human makes two decisions: approving the hashed package, then confirming the filled form (`fill_hash`) after seeing exactly what the runner read back.
+- The browser runner is a separate process. Its context is ephemeral, requests to any other origin are aborted, and it has no stored state, downloads, traces, or screenshots. The decrypted CV goes into a private temporary directory and is deleted after each run.
+- CAPTCHA, MFA, unknown required fields, attestations, dialogs, and off-site navigation pause the run. Nothing is bypassed.
+- A static test confirms that only `submission/browser.py` imports a browser library. The API process never loads it.
+- The fill manifest holds the values that were sent. It is personal data, exported and deleted with the profile and never placed in audit metadata.
+- The application tracker stores where the candidate applied. Audit events hold IDs, channel, stage, and field names only.
+
 Phase 5B note: the first live provider is Ashby's anonymous, read-only public Job Posting API.
 
 - It is bound to one exact board path on `api.ashbyhq.com`. Any redirect elsewhere blocks the source.

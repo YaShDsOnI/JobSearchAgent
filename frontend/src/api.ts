@@ -190,7 +190,7 @@ export type Application = {
   binding: { state: "current" | "stale"; drift: Array<{ code: string; message: string }> };
   approval: { id: string; state: "active" | "expired" | "revoked" | "invalidated"; approved_at: string; expires_at: string; revoked_reason: string | null } | null;
   events: Array<{ id: string; event_type: string; occurred_at: string }>;
-  submission_available: false;
+  submission_available: boolean;
   created_at: string;
   updated_at: string;
 };

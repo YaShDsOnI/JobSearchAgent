@@ -21,10 +21,12 @@ from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.db.models import (
     Application,
     ApplicationEvent,
     ApplicationPackage,
+    ApplicationSubmission,
     ApprovalRecord,
     CandidateProfile,
     CVVersion,
@@ -42,6 +44,12 @@ from app.services.audit import record_audit
 from app.services.catalog import get_visible_job, latest_snapshot, visible_to_user
 from app.services.cv_invalidation import changed_material_fields, comparable_job_content
 from app.services.sources.normalize import stable_hash
+from app.services.submission.destinations import (
+    SANDBOX_DESTINATION,
+    is_sandbox_job,
+    sandbox_destination,
+    sandbox_notice,
+)
 
 PACKAGE_SCHEMA_VERSION = "review-package-v1"
 QUESTION_SET_VERSION = "standard-questions-v1"
@@ -504,7 +512,12 @@ def build_package(
         {"code": "cv_unresolved", "message": str(item)}
         for item in (cv.source_manifest_json or {}).get("unresolved", [])
     )
-    destination = _destination(normalized.get("canonical_url") or job.canonical_url)
+    sandbox = is_sandbox_job(connector)
+    destination = (
+        sandbox_destination(job, get_settings())
+        if sandbox
+        else _destination(normalized.get("canonical_url") or job.canonical_url)
+    )
     if destination is None:
         unresolved.append({"code": "destination_invalid", "question_key": None, "reason": None})
     scores = match.scores_json or {}
@@ -553,7 +566,9 @@ def build_package(
         "destination": destination,
         "data_sharing_notice": {
             "version": DATA_SHARING_NOTICE_VERSION,
-            "text": (
+            "text": sandbox_notice()
+            if sandbox
+            else (
                 "JobFinderAgent does not send this package anywhere. If you apply, you do so "
                 f"yourself on {host}. Anything you enter or upload there, including your CV, "
                 f"is shared with {employer} and the site operator under their terms."
@@ -618,6 +633,13 @@ def binding_drift(
     cv = db.get(CVVersion, package.cv_version_id)
     if cv is None or cv.status != "approved":
         add("cv_not_approved", "The packaged CV is no longer approved.")
+    bound_destination = (package.package_json or {}).get("destination") or {}
+    if (
+        bound_destination.get("kind") == SANDBOX_DESTINATION
+        and job is not None
+        and sandbox_destination(job, get_settings()) != bound_destination
+    ):
+        add("destination_changed", "The sandbox destination changed since the package was built.")
     if _current_profile_version_id(db, application.user_id) != package.profile_version_id:
         add("profile_changed", "Your profile changed since this package was built.")
     if _current_preference_version_id(db, application.user_id) != package.preference_version_id:
@@ -1090,6 +1112,12 @@ def delete_applications(db: Session, *, application_ids: list[str]) -> int:
     """Delete applications and everything bound to them (explicit order; SQLite has no FK)."""
     if not application_ids:
         return 0
+    # Submissions hold the values that were sent: personal data, deleted with the application.
+    db.execute(
+        delete(ApplicationSubmission).where(
+            ApplicationSubmission.application_id.in_(application_ids)
+        )
+    )
     # Tracker entries are the candidate's own history: unlink, never delete, them here.
     db.execute(
         update(TrackedApplication)
@@ -1130,6 +1158,11 @@ def export_applications(db: Session, user_id: str) -> list[dict[str, Any]]:
             .where(ApplicationEvent.application_id == application.id)
             .order_by(ApplicationEvent.occurred_at.asc(), ApplicationEvent.id.asc())
         ).all()
+        submissions = db.scalars(
+            select(ApplicationSubmission)
+            .where(ApplicationSubmission.application_id == application.id)
+            .order_by(ApplicationSubmission.created_at.asc())
+        ).all()
         result.append(
             {
                 "id": application.id,
@@ -1165,6 +1198,22 @@ def export_applications(db: Session, user_id: str) -> list[dict[str, Any]]:
                         "revoked_reason": approval.revoked_reason,
                     }
                     for approval in approvals
+                ],
+                "submissions": [
+                    {
+                        "id": item.id,
+                        "package_id": item.package_id,
+                        "state": item.state,
+                        "destination_url": item.destination_url,
+                        "fill_manifest": item.fill_manifest_json,
+                        "fill_hash": item.fill_hash,
+                        "cv_sha256": item.cv_sha256,
+                        "submit_clicked_at": _iso(item.submit_clicked_at),
+                        "confirmation_id": item.confirmation_id,
+                        "verification": item.verification,
+                        "created_at": _iso(item.created_at),
+                    }
+                    for item in submissions
                 ],
                 "events": [
                     {

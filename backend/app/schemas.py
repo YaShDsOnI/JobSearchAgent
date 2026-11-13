@@ -449,7 +449,8 @@ class ApplicationResponse(StrictModel):
     binding: ApplicationBinding
     approval: ApprovalResponse | None
     events: list[ApplicationEventResponse]
-    submission_available: Literal[False] = False
+    # True only for sandbox ATS jobs (Phase 6); every other job is link-out only.
+    submission_available: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -521,3 +522,48 @@ class TrackerSummaryResponse(StrictModel):
 class TrackerListResponse(StrictModel):
     entries: list[TrackerEntryResponse]
     summary: TrackerSummaryResponse
+
+
+SubmissionState = Literal[
+    "queued", "filling", "final_review", "submit_queued", "submitting", "submitted",
+    "submitted_unverified", "not_received", "paused", "blocked", "failed", "cancelled",
+]
+
+
+class SubmissionStart(StrictModel):
+    review_hash: str = Field(min_length=64, max_length=64)
+
+
+class SubmissionConfirm(StrictModel):
+    fill_hash: str = Field(min_length=64, max_length=64)
+
+
+class SubmissionResolve(StrictModel):
+    received: bool
+
+
+class SubmissionField(StrictModel):
+    question_key: str
+    label: str
+    display_value: str
+    provenance: str | None
+    sent: bool
+
+
+class SubmissionResponse(StrictModel):
+    id: str
+    state: SubmissionState
+    pause_reason: str | None
+    error_code: str | None
+    destination_url: str
+    fields: list[SubmissionField]
+    resume_sha256: str | None
+    fill_hash: str | None
+    confirmation_id: str | None
+    verification: Literal["confirmation_page", "candidate_reported"] | None
+    submit_clicked_at: datetime | None
+    can_confirm: bool
+    can_cancel: bool
+    can_resolve: bool
+    created_at: datetime
+    updated_at: datetime

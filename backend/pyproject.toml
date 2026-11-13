@@ -27,7 +27,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# The isolated application runner (python -m app.runner). The API never imports it.
+# After installing: python -m playwright install chromium
+browser = [
+  "playwright>=1.55,<2",
+]
 dev = [
+  "playwright>=1.55,<2",
   "mypy>=1.13,<2",
   "pip-audit>=2.7",
   "pytest>=9.0.3,<10",
@@ -46,6 +52,10 @@ exclude = ["migrations/versions"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM"]
 ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+# Embedded HTML for the dummy sandbox site: long template lines are clearer unwrapped.
+"sandbox_ats/app.py" = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,6 +1,6 @@
 # Database design
 
-Status: schema implemented through Alembic migration `0010_application_tracker` (Phase 6 application tracker; Phase 5C application tables; Phase 5B added no schema changes); validated on PostgreSQL 17 and SQLite with no model/migration drift. Production hardening remains pending.
+Status: schema implemented through Alembic migration `0011_sandbox_submissions` (Phase 6 sandbox adapter and application tracker; Phase 5C application tables; Phase 5B added no schema changes); validated on PostgreSQL 17 and SQLite with no model/migration drift. Production hardening remains pending.
 
 ## Principles
 
@@ -41,6 +41,8 @@ Status: schema implemented through Alembic migration `0010_application_tracker` 
 | `application_events` (5C) | id, application_id, event_type, actor, metadata_json, occurred_at | Append-only timeline; metadata holds keys, hashes, revisions, and IDs, never answer values |
 | `approval_records` (5C) | id, application_id, package_id, reviewed_payload_hash, approved_by_user_id, approved_at, expires_at, revoked_at, revoked_reason | Approval binds to one package revision and its hash; it is active only while unexpired, unrevoked, current, and the live binding check passes |
 | `tracked_applications` (6) | id, user_id, application_id (unique, nullable, `SET NULL`), package_id, review_hash, channel (`link_out`/`external`/`sandbox_adapter`), company, role_title, location, job_url, applied_on, stage (`applied`/`interviewing`/`offer`/`accepted`/`rejected`/`withdrawn`), notes, created_at, updated_at | Candidate's record of where they applied; check constraints on channel and stage; a `link_out` entry binds the package revision and hash that were current when marked; personal data: exported and deleted with the profile, never placed in audit metadata |
+| `application_destinations` (6) | id, name (unique), kind, origin, enabled, policy_status, adapter_version, authorization_json, created_at, updated_at | Adapter destinations as policy objects with a kill switch read fresh before every action; Phase 6 allows only `sandbox_ats` (loopback origin) |
+| `application_submissions` (6) | id, application_id, user_id, package_id, review_hash, approval_id, destination_name, destination_url, idempotency_key (unique `<application>:<package>`), state (check constraint), pause_reason, error_code, fill_manifest_json, fill_hash, confirmed_fill_hash, cv_sha256, fill_runs, submit_clicked_at, confirmation_id, verification, created_at, updated_at, finished_at | One submission per package; `submit_clicked_at` is committed before the click and a set value forbids any further click; the manifest holds sent values (personal data: exported and deleted with the profile) |
 | `external_accounts` | id, user_id, provider, authorization_type, secret_ref, scopes, status | Store only a vault reference; never a password/cookie in DB |
 | `tasks` | id, kind, idempotency_key, payload_ref, state, lease, attempts, next_run_at | Unique idempotency key prevents duplicate work |
 | `audit_events` | id, user_id, actor, action, object_type/id, metadata_json, request_id, occurred_at | Redacted and append-only |

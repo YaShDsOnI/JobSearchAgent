@@ -38,9 +38,10 @@ def default_registry() -> ProviderRegistry:
     # Reviewed providers only. Network providers still fail closed unless live access is
     # enabled, the host is allowlisted, and the connector's authorization is complete.
     from app.services.sources.ashby import AshbyJobBoardProvider
-    from app.services.sources.fixture import BundledFixtureProvider
+    from app.services.sources.fixture import BundledFixtureProvider, SandboxFixtureProvider
 
     registry = ProviderRegistry()
     registry.register("fixture", BundledFixtureProvider)
     registry.register("ashby_job_board", AshbyJobBoardProvider)
+    registry.register("sandbox_ats_fixture", SandboxFixtureProvider)
     return registry
