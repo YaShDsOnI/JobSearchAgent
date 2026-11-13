@@ -1,0 +1,282 @@
+[
+  {
+    "source_job_id": "sbx-data-analyst",
+    "title": "Sandbox Data Analyst",
+    "employer": "Sandbox Employer (not real)",
+    "canonical_url": "https://sandbox-ats.invalid/jobs/sbx-data-analyst",
+    "location_text": "Bengaluru, India",
+    "work_mode": "onsite",
+    "description": "SANDBOX record for adapter testing only. Not a real job or employer. SQL is required. Python is preferred.",
+    "location_country": "IN",
+    "permitted_countries": [
+      "IN"
+    ],
+    "sponsorship": "not_available",
+    "requirements": [
+      {
+        "skill": "SQL",
+        "kind": "required",
+        "importance": 1.0,
+        "evidence": "SQL is required."
+      },
+      {
+        "skill": "Python",
+        "kind": "preferred",
+        "importance": 0.6,
+        "evidence": "Python is preferred."
+      }
+    ]
+  },
+  {
+    "source_job_id": "sbx-captcha",
+    "title": "Sandbox Analyst (CAPTCHA)",
+    "employer": "Sandbox Employer (not real)",
+    "canonical_url": "https://sandbox-ats.invalid/jobs/sbx-captcha",
+    "location_text": "Bengaluru, India",
+    "work_mode": "onsite",
+    "description": "SANDBOX record for adapter testing only. Not a real job or employer. SQL is required. Python is preferred.",
+    "location_country": "IN",
+    "permitted_countries": [
+      "IN"
+    ],
+    "sponsorship": "not_available",
+    "requirements": [
+      {
+        "skill": "SQL",
+        "kind": "required",
+        "importance": 1.0,
+        "evidence": "SQL is required."
+      },
+      {
+        "skill": "Python",
+        "kind": "preferred",
+        "importance": 0.6,
+        "evidence": "Python is preferred."
+      }
+    ]
+  },
+  {
+    "source_job_id": "sbx-mfa",
+    "title": "Sandbox Analyst (login wall)",
+    "employer": "Sandbox Employer (not real)",
+    "canonical_url": "https://sandbox-ats.invalid/jobs/sbx-mfa",
+    "location_text": "Bengaluru, India",
+    "work_mode": "onsite",
+    "description": "SANDBOX record for adapter testing only. Not a real job or employer. SQL is required. Python is preferred.",
+    "location_country": "IN",
+    "permitted_countries": [
+      "IN"
+    ],
+    "sponsorship": "not_available",
+    "requirements": [
+      {
+        "skill": "SQL",
+        "kind": "required",
+        "importance": 1.0,
+        "evidence": "SQL is required."
+      },
+      {
+        "skill": "Python",
+        "kind": "preferred",
+        "importance": 0.6,
+        "evidence": "Python is preferred."
+      }
+    ]
+  },
+  {
+    "source_job_id": "sbx-unknown-field",
+    "title": "Sandbox Analyst (extra question)",
+    "employer": "Sandbox Employer (not real)",
+    "canonical_url": "https://sandbox-ats.invalid/jobs/sbx-unknown-field",
+    "location_text": "Bengaluru, India",
+    "work_mode": "onsite",
+    "description": "SANDBOX record for adapter testing only. Not a real job or employer. SQL is required. Python is preferred.",
+    "location_country": "IN",
+    "permitted_countries": [
+      "IN"
+    ],
+    "sponsorship": "not_available",
+    "requirements": [
+      {
+        "skill": "SQL",
+        "kind": "required",
+        "importance": 1.0,
+        "evidence": "SQL is required."
+      },
+      {
+        "skill": "Python",
+        "kind": "preferred",
+        "importance": 0.6,
+        "evidence": "Python is preferred."
+      }
+    ]
+  },
+  {
+    "source_job_id": "sbx-attestation",
+    "title": "Sandbox Analyst (attestation)",
+    "employer": "Sandbox Employer (not real)",
+    "canonical_url": "https://sandbox-ats.invalid/jobs/sbx-attestation",
+    "location_text": "Bengaluru, India",
+    "work_mode": "onsite",
+    "description": "SANDBOX record for adapter testing only. Not a real job or employer. SQL is required. Python is preferred.",
+    "location_country": "IN",
+    "permitted_countries": [
+      "IN"
+    ],
+    "sponsorship": "not_available",
+    "requirements": [
+      {
+        "skill": "SQL",
+        "kind": "required",
+        "importance": 1.0,
+        "evidence": "SQL is required."
+      },
+      {
+        "skill": "Python",
+        "kind": "preferred",
+        "importance": 0.6,
+        "evidence": "Python is preferred."
+      }
+    ]
+  },
+  {
+    "source_job_id": "sbx-offsite",
+    "title": "Sandbox Analyst (off-site redirect)",
+    "employer": "Sandbox Employer (not real)",
+    "canonical_url": "https://sandbox-ats.invalid/jobs/sbx-offsite",
+    "location_text": "Bengaluru, India",
+    "work_mode": "onsite",
+    "description": "SANDBOX record for adapter testing only. Not a real job or employer. SQL is required. Python is preferred.",
+    "location_country": "IN",
+    "permitted_countries": [
+      "IN"
+    ],
+    "sponsorship": "not_available",
+    "requirements": [
+      {
+        "skill": "SQL",
+        "kind": "required",
+        "importance": 1.0,
+        "evidence": "SQL is required."
+      },
+      {
+        "skill": "Python",
+        "kind": "preferred",
+        "importance": 0.6,
+        "evidence": "Python is preferred."
+      }
+    ]
+  },
+  {
+    "source_job_id": "sbx-dialog",
+    "title": "Sandbox Analyst (dialog)",
+    "employer": "Sandbox Employer (not real)",
+    "canonical_url": "https://sandbox-ats.invalid/jobs/sbx-dialog",
+    "location_text": "Bengaluru, India",
+    "work_mode": "onsite",
+    "description": "SANDBOX record for adapter testing only. Not a real job or employer. SQL is required. Python is preferred.",
+    "location_country": "IN",
+    "permitted_countries": [
+      "IN"
+    ],
+    "sponsorship": "not_available",
+    "requirements": [
+      {
+        "skill": "SQL",
+        "kind": "required",
+        "importance": 1.0,
+        "evidence": "SQL is required."
+      },
+      {
+        "skill": "Python",
+        "kind": "preferred",
+        "importance": 0.6,
+        "evidence": "Python is preferred."
+      }
+    ]
+  },
+  {
+    "source_job_id": "sbx-form-drift",
+    "title": "Sandbox Analyst (changing form)",
+    "employer": "Sandbox Employer (not real)",
+    "canonical_url": "https://sandbox-ats.invalid/jobs/sbx-form-drift",
+    "location_text": "Bengaluru, India",
+    "work_mode": "onsite",
+    "description": "SANDBOX record for adapter testing only. Not a real job or employer. SQL is required. Python is preferred.",
+    "location_country": "IN",
+    "permitted_countries": [
+      "IN"
+    ],
+    "sponsorship": "not_available",
+    "requirements": [
+      {
+        "skill": "SQL",
+        "kind": "required",
+        "importance": 1.0,
+        "evidence": "SQL is required."
+      },
+      {
+        "skill": "Python",
+        "kind": "preferred",
+        "importance": 0.6,
+        "evidence": "Python is preferred."
+      }
+    ]
+  },
+  {
+    "source_job_id": "sbx-no-confirmation",
+    "title": "Sandbox Analyst (no confirmation)",
+    "employer": "Sandbox Employer (not real)",
+    "canonical_url": "https://sandbox-ats.invalid/jobs/sbx-no-confirmation",
+    "location_text": "Bengaluru, India",
+    "work_mode": "onsite",
+    "description": "SANDBOX record for adapter testing only. Not a real job or employer. SQL is required. Python is preferred.",
+    "location_country": "IN",
+    "permitted_countries": [
+      "IN"
+    ],
+    "sponsorship": "not_available",
+    "requirements": [
+      {
+        "skill": "SQL",
+        "kind": "required",
+        "importance": 1.0,
+        "evidence": "SQL is required."
+      },
+      {
+        "skill": "Python",
+        "kind": "preferred",
+        "importance": 0.6,
+        "evidence": "Python is preferred."
+      }
+    ]
+  },
+  {
+    "source_job_id": "sbx-server-error",
+    "title": "Sandbox Analyst (server error)",
+    "employer": "Sandbox Employer (not real)",
+    "canonical_url": "https://sandbox-ats.invalid/jobs/sbx-server-error",
+    "location_text": "Bengaluru, India",
+    "work_mode": "onsite",
+    "description": "SANDBOX record for adapter testing only. Not a real job or employer. SQL is required. Python is preferred.",
+    "location_country": "IN",
+    "permitted_countries": [
+      "IN"
+    ],
+    "sponsorship": "not_available",
+    "requirements": [
+      {
+        "skill": "SQL",
+        "kind": "required",
+        "importance": 1.0,
+        "evidence": "SQL is required."
+      },
+      {
+        "skill": "Python",
+        "kind": "preferred",
+        "importance": 0.6,
+        "evidence": "Python is preferred."
+      }
+    ]
+  }
+]

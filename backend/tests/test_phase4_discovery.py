@@ -974,9 +974,10 @@ def test_network_providers_fail_closed_without_domain_and_global_egress_flag(db)
 
 def test_default_registry_contains_only_reviewed_providers(db):
     registry = default_registry()
-    # The bundled fixture plus exactly one reviewed live provider (Phase 5B, Ashby public
-    # posting API). Network providers still fail closed unless explicitly enabled.
-    assert registry.kinds() == ["ashby_job_board", "fixture"]
+    # The bundled fixture, the network-free Phase 6 sandbox ATS jobs, and exactly one
+    # reviewed live provider (Phase 5B, Ashby public posting API). Network providers still
+    # fail closed unless explicitly enabled.
+    assert registry.kinds() == ["ashby_job_board", "fixture", "sandbox_ats_fixture"]
     network = [k for k in registry.kinds() if registry.create(k).descriptor.requires_network]
     assert network == ["ashby_job_board"]
     assert get_settings().source_network_access_enabled is False

@@ -1,5 +1,6 @@
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import { api, Application, Artifact, currentUser, CVVersion, Job, Match, MatchReview, Profile, User } from "./api";
+import { SubmissionPanel } from "./Submission";
 import { MarkAppliedControl, TrackerPanel } from "./Tracker";
 
 type AuthMode = "login" | "register";
@@ -273,6 +274,16 @@ function Dashboard({ user, onSignedOut, error, setError }: { user: User; onSigne
     return applicationAction(`/api/v1/jobs/${jobId}/applications`, jsonPost({ cv_version_id: cvVersionId }), "Unable to prepare application package");
   }
 
+  async function refreshApplication() {
+    if (!application) return;
+    try {
+      setApplication(await api<Application>(`/api/v1/applications/${application.id}`));
+      setTrackerVersion((value) => value + 1);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to refresh the application");
+    }
+  }
+
   async function markApplied(appliedOn: string) {
     if (!application) return;
     try {
@@ -314,11 +325,11 @@ function Dashboard({ user, onSignedOut, error, setError }: { user: User; onSigne
       {error && <div className="notice error" role="alert">{error}</div>}
       <main className="dashboard-grid">
         <ProfilePanel profile={profile} onUpdated={refreshProfile} setError={setError} />
-        <section className="panel hero"><p className="eyebrow">Application review and tracking</p><h2>Prepare and review applications, then apply yourself</h2><p className="muted">Jobs come from authorized, provenance-labelled sources. Eligibility, skill/experience fit, and preferences are evaluated separately using confirmed facts. CVs are generated from verified facts and need your approval. A review package binds the exact job, CV, and answers you approve; JobFinderAgent never sends an application.</p><div className="status-row"><span className="status-dot" />{profileStatus}</div></section>
+        <section className="panel hero"><p className="eyebrow">Application review and tracking</p><h2>Prepare and review applications, then apply yourself</h2><p className="muted">Jobs come from authorized, provenance-labelled sources. Eligibility, skill/experience fit, and preferences are evaluated separately using confirmed facts. CVs are generated from verified facts and need your approval. A review package binds the exact job, CV, and answers you approve. JobFinderAgent never sends anything to a real employer: you apply yourself, except for jobs from the local sandbox ATS, which it can submit after your final review.</p><div className="status-row"><span className="status-dot" />{profileStatus}</div></section>
         <TrackerPanel refreshKey={trackerVersion} setError={setError} />
         {review && <ReviewPanel review={review} onResolve={resolveReview} />}
         {cv && <CVPanel version={cv} onDecision={decideCv} onPrepare={() => prepareApplication(cv.job_id, cv.id)} />}
-        {application && <ApplicationPanel application={application} onRebuild={() => prepareApplication(application.job_id, application.package?.cv_version_id ?? "")} onAnswer={(key, value) => applicationAction(`/api/v1/applications/${application.id}/answers/${key}`, jsonPost({ value }, "PUT"), "Unable to save answer")} onApprove={() => applicationAction(`/api/v1/applications/${application.id}/approve`, jsonPost({ review_hash: application.package?.review_hash }), "Unable to approve package")} onRevoke={() => applicationAction(`/api/v1/applications/${application.id}/approval/revoke`, { method: "POST" }, "Unable to revoke approval")} onSkip={() => applicationAction(`/api/v1/applications/${application.id}/skip`, jsonPost({}), "Unable to skip application")} onMarkApplied={markApplied} />}
+        {application && <ApplicationPanel application={application} onRebuild={() => prepareApplication(application.job_id, application.package?.cv_version_id ?? "")} onAnswer={(key, value) => applicationAction(`/api/v1/applications/${application.id}/answers/${key}`, jsonPost({ value }, "PUT"), "Unable to save answer")} onApprove={() => applicationAction(`/api/v1/applications/${application.id}/approve`, jsonPost({ review_hash: application.package?.review_hash }), "Unable to approve package")} onRevoke={() => applicationAction(`/api/v1/applications/${application.id}/approval/revoke`, { method: "POST" }, "Unable to revoke approval")} onSkip={() => applicationAction(`/api/v1/applications/${application.id}/skip`, jsonPost({}), "Unable to skip application")} onMarkApplied={markApplied} onRefresh={refreshApplication} setError={setError} />}
         <section className="panel"><div className="section-heading"><div><p className="eyebrow">Profile preferences</p><h2>Tell us what you want</h2></div></div><form onSubmit={savePreferences} className="inline-form"><label className="grow">Target role<input value={role} onChange={(event) => setRole(event.target.value)} placeholder="e.g. Platform Engineer" /></label><button type="submit">Save version</button></form><p className="muted small">Work authorization remains explicit and is never inferred from location or profile data.</p></section>
         <section className="panel jobs-panel"><div className="section-heading"><div><p className="eyebrow">Catalog</p><h2>Available job records</h2></div><span className="count">{jobs.length}</span></div>{loading ? <p className="muted">Loading catalog…</p> : jobs.length === 0 ? <div className="empty"><h3>No approved job feed is connected</h3><p className="muted">Only authorized sources are ingested; the bundled source is a sanitized local fixture. No scraping or unauthorized integration is active.</p></div> : <div className="job-list">{jobs.map((job) => <JobCard key={job.id} job={job} match={matches[job.id]} onMatch={runMatch} onReview={openReview} onDraft={draftCv} />)}</div>}</section>
       </main>
@@ -352,7 +363,7 @@ const STATUS_LABELS: Record<Application["status"], string> = {
   skipped: "Skipped",
 };
 
-function ApplicationPanel({ application, onAnswer, onApprove, onRevoke, onSkip, onRebuild, onMarkApplied }: { application: Application; onAnswer: (key: string, value: string | null) => Promise<void>; onApprove: () => Promise<void>; onRevoke: () => Promise<void>; onSkip: () => Promise<void>; onRebuild: () => Promise<void>; onMarkApplied: (appliedOn: string) => Promise<void> }) {
+function ApplicationPanel({ application, onAnswer, onApprove, onRevoke, onSkip, onRebuild, onMarkApplied, onRefresh, setError }: { application: Application; onAnswer: (key: string, value: string | null) => Promise<void>; onApprove: () => Promise<void>; onRevoke: () => Promise<void>; onSkip: () => Promise<void>; onRebuild: () => Promise<void>; onMarkApplied: (appliedOn: string) => Promise<void>; onRefresh: () => Promise<void>; setError: (value: string) => void }) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const pkg = application.package;
   if (!pkg) return null;
@@ -362,7 +373,7 @@ function ApplicationPanel({ application, onAnswer, onApprove, onRevoke, onSkip, 
   const editable = !applied && application.decision === "open" && application.binding.state === "current";
   return <section className="panel" aria-labelledby="application-title"><div className="section-heading"><div><p className="eyebrow">Application review package · revision {pkg.revision}</p><h2 id="application-title">{job.title} · {job.employer}</h2></div><span className="count">{STATUS_LABELS[application.status]}</span></div>
     <div className="notice info"><strong>Nothing is sent by JobFinderAgent.</strong> {pkg.content.data_sharing_notice.text}</div>
-    {applied && <div className="notice info"><strong>You marked this as applied.</strong> It is in your application tracker, and this package revision is kept as the record of what you prepared. To change it, remove the entry from the tracker first.</div>}
+    {applied && !application.submission_available && <div className="notice info"><strong>You marked this as applied.</strong> It is in your application tracker, and this package revision is kept as the record of what you prepared. To change it, remove the entry from the tracker first.</div>}
     {!applied && application.binding.state === "stale" && <div className="notice error"><strong>This package is out of date.</strong><ul>{application.binding.drift.map((item) => <li key={item.code}>{item.message}</li>)}</ul>{application.decision === "open" && <button className="secondary" type="button" onClick={onRebuild}>Rebuild package</button>}</div>}
     <p className="muted small">Source: {pkg.content.source_policy.name} ({pkg.content.source_policy.authorization_basis ?? "unknown basis"}, terms {pkg.content.source_policy.terms_version}) · snapshot v{job.snapshot_version}{job.retrieved_at ? ` retrieved ${new Date(job.retrieved_at).toLocaleString()}` : ""} · {job.location_text ?? "Location unknown"}</p>
     <div className="match-summary"><p><strong>Eligibility:</strong> {pkg.content.match.eligibility.status}</p><p><strong>Skill/experience fit:</strong> {pkg.content.match.fit.score}/100</p><p><strong>Preference fit:</strong> {pkg.content.match.preference.score}/100</p></div>
@@ -372,6 +383,7 @@ function ApplicationPanel({ application, onAnswer, onApprove, onRevoke, onSkip, 
     {pkg.warnings.length > 0 && <details><summary>Warnings ({pkg.warnings.length})</summary><ul>{pkg.warnings.map((item, index) => <li key={`${item.code}-${index}`}>{item.message ?? `${item.question_key}: ${item.reason}`}</li>)}</ul></details>}
     {application.approval && <p className="muted small">Approval: {application.approval.state}{application.approval.state === "active" ? ` until ${new Date(application.approval.expires_at).toLocaleString()}` : ""}{application.approval.revoked_reason ? ` (${application.approval.revoked_reason})` : ""}</p>}
     <p className="muted small">Review hash: <code>{pkg.review_hash}</code></p>
-    <div className="button-row">{!applied && application.can_approve && <button type="button" onClick={onApprove}>Approve this exact package</button>}{application.approval?.state === "active" && <button className="secondary" type="button" onClick={onRevoke}>Revoke approval</button>}{!applied && destination && application.decision === "open" && <a className="secondary" href={destination.url} target="_blank" rel="noopener noreferrer">Apply yourself on {destination.host}</a>}{!applied && application.decision === "open" && <MarkAppliedControl onMark={onMarkApplied} />}{!applied && application.decision === "open" && <button className="danger" type="button" onClick={onSkip}>Skip this job</button>}</div>
+    <div className="button-row">{!applied && application.can_approve && <button type="button" onClick={onApprove}>Approve this exact package</button>}{application.approval?.state === "active" && <button className="secondary" type="button" onClick={onRevoke}>Revoke approval</button>}{!applied && destination && application.decision === "open" && <a className="secondary" href={destination.url} target="_blank" rel="noopener noreferrer">Apply yourself on {destination.host}</a>}{!applied && !application.submission_available && application.decision === "open" && <MarkAppliedControl onMark={onMarkApplied} />}{!applied && application.decision === "open" && <button className="danger" type="button" onClick={onSkip}>Skip this job</button>}</div>
+    {application.submission_available && <SubmissionPanel applicationId={application.id} reviewHash={pkg.review_hash} approved={application.approval?.state === "active" && application.binding.state === "current"} onChanged={onRefresh} setError={setError} />}
   </section>;
 }

@@ -206,6 +206,23 @@ Phase 4 registers only network-free fixture providers. Validation evidence:
 
 Pre-Phase-4 snapshots are versioned as `legacy-v0`. Their first Phase 4 ingestion creates one re-normalized snapshot version. Because only material job changes supersede CVs (see `docs/cv-engine.md`), that re-normalization does not invalidate existing CVs.
 
+## Phase 6 implementation note (2026-11-13)
+
+Implemented under the decision record above, in the approved scope only:
+
+- **Application tracker** (`tracked_applications`, migration `0010`).
+- **Sandbox browser adapter** (`application_destinations` and `application_submissions`, migration `0011`). The only destination is the local sandbox ATS. Other jobs stay link-out.
+
+Acceptance criteria evidence (`docs/testing.md`, "Phase 6 sandbox adapter tests"):
+
+- **No submission without a live approval matching the review hash.** Start needs an active approval for the current package and its hash. Confirm and the pre-click check re-verify the approval, the binding, and every kill switch.
+- **CAPTCHA, MFA, and unknown fields pause, never bypass.** This is tested with real Chromium against sandbox variants for CAPTCHA, a login wall, an unknown required field, an attestation, an off-site redirect, and a dialog. Nothing reaches the sandbox in any of these cases.
+- **Crashes, retries, and double clicks do not duplicate.** There is one submission per package. Confirm is idempotent. `submit_clicked_at` is committed before the click, and a redelivered task after it never clicks again. A missing confirmation becomes `submitted_unverified` and is resolved by the candidate, never retried.
+- **What was sent can be reconstructed.** The fill manifest (labels, displayed values, value hashes, provenance), the CV SHA-256, the destination, and the confirmation ID are stored with the package and review hash, and the timeline records each step.
+- **The kill switch disables the adapter immediately.** `APPLICATION_SUBMISSION_ENABLED` and the database-backed destination switch are read fresh. Closing either one between confirm and the click prevents the click (tested).
+
+Not done, and needing a new approval: any real destination, submission from a deployed environment (the runner has no deployment image yet), and batch or unattended submission.
+
 ## Recommended next implementation phase
 
 Phase 5B is implemented: the read-only Ashby public Job Posting API is registered as the only live provider, covered by sanitized contract fixtures, and validated by a live read-only smoke test (see `docs/testing.md`). Live access stays disabled by default. The remaining deployment prerequisites above must be met before network access is turned on in any deployed environment. Phase 5C is implemented: an immutable, hashed review package per job with a live binding check, candidate approval (24-hour expiry), and a link-out destination. Nothing is sent. Evidence is in `docs/testing.md`. The live-access deployment controls (decision record above) implement the mechanisms for the remaining prerequisites; a real deployed environment still has to run and verify them. The next step is Phase 6, one permitted application destination (submission adapter). It needs its own written authorization for a specific destination and a new product-owner approval before work starts. Do not add further live providers or implement application submission or browser automation without that approval.

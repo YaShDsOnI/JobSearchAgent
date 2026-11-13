@@ -497,6 +497,89 @@ class Application(Base):
     )
 
 
+SUBMISSION_STATES = (
+    "queued", "filling", "final_review", "submit_queued", "submitting", "submitted",
+    "submitted_unverified", "not_received", "paused", "blocked", "failed", "cancelled",
+)
+# States in which a submission is in progress or its outcome stands.
+SUBMISSION_LIVE_STATES = frozenset(
+    {"queued", "filling", "final_review", "submit_queued", "submitting", "submitted",
+     "submitted_unverified"}
+)
+
+
+class ApplicationDestination(Base):
+    """A destination an adapter may submit to: a policy object with its own kill switch.
+
+    Phase 6 allows exactly one, the local sandbox ATS (`sandbox_ats`). It is read fresh
+    before every check, so disabling it takes effect without a restart.
+    """
+
+    __tablename__ = "application_destinations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(64), unique=True)
+    kind: Mapped[str] = mapped_column(String(64))
+    origin: Mapped[str] = mapped_column(String(255))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    policy_status: Mapped[str] = mapped_column(String(32), default="approved")
+    adapter_version: Mapped[str] = mapped_column(String(64))
+    authorization_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, onupdate=now_utc
+    )
+
+
+class ApplicationSubmission(Base):
+    """One adapter submission of one application package (Phase 6, sandbox ATS only).
+
+    `fill_manifest_json` holds the values that were (or would be) sent. It is personal
+    data: exported and deleted with the profile, never placed in audit metadata.
+    """
+
+    __tablename__ = "application_submissions"
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_application_submission_idempotency"),
+        CheckConstraint(
+            "state IN ('queued', 'filling', 'final_review', 'submit_queued', 'submitting', "
+            "'submitted', 'submitted_unverified', 'not_received', 'paused', 'blocked', "
+            "'failed', 'cancelled')",
+            name="ck_application_submissions_state",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    application_id: Mapped[str] = mapped_column(
+        ForeignKey("applications.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    package_id: Mapped[str] = mapped_column(String(36))
+    review_hash: Mapped[str] = mapped_column(String(64))
+    approval_id: Mapped[str] = mapped_column(String(36))
+    destination_name: Mapped[str] = mapped_column(String(64))
+    destination_url: Mapped[str] = mapped_column(String(2048))
+    idempotency_key: Mapped[str] = mapped_column(String(128))
+    state: Mapped[str] = mapped_column(String(32), default="queued")
+    pause_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    fill_manifest_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    fill_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    confirmed_fill_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    cv_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    fill_runs: Mapped[int] = mapped_column(Integer, default=0)
+    submit_clicked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    confirmation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    verification: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, onupdate=now_utc
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 TRACKER_CHANNELS = ("link_out", "external", "sandbox_adapter")
 TRACKER_STAGES = ("applied", "interviewing", "offer", "accepted", "rejected", "withdrawn")
 

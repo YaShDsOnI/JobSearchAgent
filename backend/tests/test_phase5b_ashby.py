@@ -311,7 +311,7 @@ def test_ashby_is_blocked_under_default_settings(db):
         )
     assert raised.value.code == SourceErrorCode.NETWORK_ACCESS_DISABLED
     assert server.requests == []
-    assert default_registry().kinds() == ["ashby_job_board", "fixture"]
+    assert default_registry().kinds() == ["ashby_job_board", "fixture", "sandbox_ats_fixture"]
 
 
 # --- full pipeline ------------------------------------------------------------------------

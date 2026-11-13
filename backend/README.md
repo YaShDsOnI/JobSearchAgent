@@ -49,6 +49,19 @@ Connector credentials are never stored in the database. Configure a reference: `
 
 Outside development and test, `SOURCE_NETWORK_ACCESS_ENABLED=true` also requires `SOURCE_EGRESS_PROXY_URL` (for example `http://egress-proxy:3128`). Every source request is then tunneled through that CONNECT-only proxy, and no other connection can be opened.
 
+## Phase 6 sandbox adapter (local only)
+
+The only destination is the local sandbox ATS, a dummy employer site in this repository.
+
+1. `python -m playwright install chromium` (once).
+2. `python -m sandbox_ats --port 8100`. It binds to loopback only.
+3. `python -m app.admin register-sandbox` registers the sandbox jobs and the destination, which starts disabled.
+4. `python -m app.admin set-destination-enabled --destination sandbox_ats --enable --reason "<why>"`. Use `--disable` as the kill switch.
+5. Run the API with `APPLICATION_SUBMISSION_ENABLED=true` (and `SANDBOX_ATS_ORIGIN=http://127.0.0.1:8100`, the default).
+6. Run the isolated runner: `python -m app.runner --loop`.
+
+In the app, prepare and approve a sandbox job's package, choose "Fill the sandbox form for review", check what was filled, then confirm. Design: `../docs/application-agent.md`, "Phase 6: sandbox browser adapter".
+
 ## Reference deployment
 
 `docker compose --profile app up --build` (from the repository root) runs migrations, the API (on `127.0.0.1:8000`), a continuous worker and scheduler, and the egress proxy. The worker and scheduler sit on an internal network whose only route out is the proxy. Put `POSTGRES_PASSWORD`, `SESSION_SECRET`, `ARTIFACT_ENCRYPTION_KEY`, and any `SOURCE_*` and `ALERT_*` settings in a root `.env` (never committed). Put secret files in `deploy/secrets/` (git-ignored), or point `SECRETS_HOST_DIR` elsewhere. Before enabling network access in any deployed environment, run `deploy/egress-proxy/verify.py` there (see `../docs/testing.md`). Design: `../docs/source-connectors.md`, "Deployment enforcement".

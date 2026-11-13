@@ -768,6 +768,14 @@ def test_no_route_can_submit_or_send_an_application():
         # Phase 6 tracker: records that the candidate applied themselves; sends nothing
         # (static network-import check in tests/test_application_tracker.py).
         ("/api/v1/applications/{application_id}/applied", "post"),
+        # Phase 6 sandbox adapter (approved 2026-11-13): these only queue work for the
+        # isolated runner, whose only destination is the loopback sandbox ATS
+        # (tests/test_phase6_submission.py).
+        ("/api/v1/applications/{application_id}/submission", "post"),
+        ("/api/v1/applications/{application_id}/submission", "get"),
+        ("/api/v1/applications/{application_id}/submission/confirm", "post"),
+        ("/api/v1/applications/{application_id}/submission/cancel", "post"),
+        ("/api/v1/applications/{application_id}/submission/resolve", "post"),
     }
 
 

@@ -111,15 +111,19 @@ def stage_setup(ctx: Context) -> str:
         ctx.run([sys.executable, "-m", "venv", VENV])
         ctx.run([python, "-m", "pip", "install", "-q", "--upgrade", "pip"])
     ctx.run([python, "-m", "pip", "install", "-q", "-e", ".[dev]"], cwd=BACKEND)
+    # Chromium for the Phase 6 sandbox adapter browser tests (no-op when already present).
+    ctx.run([python, "-m", "playwright", "install", "chromium"], cwd=BACKEND)
     ctx.python = python
     version = ctx.run([python, "--version"]).stdout.strip()
     return f"{version} in backend/.venv"
 
 
 def stage_lint(ctx: Context) -> str:
-    ctx.run([ctx.python, "-m", "ruff", "check", "app", "migrations", "tests"], cwd=BACKEND)
-    ctx.run([ctx.python, "-m", "mypy", "app"], cwd=BACKEND)
-    ctx.run([ctx.python, "-m", "compileall", "-q", "app", "migrations", "tests"], cwd=BACKEND)
+    ctx.run([ctx.python, "-m", "ruff", "check", "app", "migrations", "tests", "sandbox_ats"],
+            cwd=BACKEND)
+    ctx.run([ctx.python, "-m", "mypy", "app", "sandbox_ats"], cwd=BACKEND)
+    ctx.run([ctx.python, "-m", "compileall", "-q", "app", "migrations", "tests", "sandbox_ats"],
+            cwd=BACKEND)
     return "ruff, mypy, compileall"
 
 

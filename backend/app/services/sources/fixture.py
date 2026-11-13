@@ -11,6 +11,7 @@ from app.services.sources.errors import InvalidProviderResponseError
 FIXTURE_DIR = Path(__file__).resolve().parent.parent.parent / "fixtures"
 # Dataset names are an allowlist, never a path supplied by configuration.
 BUNDLED_DATASETS = {"jobs": "jobs.json"}
+SANDBOX_DATASET = "sandbox_jobs.json"
 
 FIXTURE_DESCRIPTOR = ProviderDescriptor(
     kind="fixture",
@@ -38,6 +39,28 @@ class BundledFixtureProvider:
         return FetchPage(
             records=records, listing_complete=True, source_url=f"fixture://{dataset}"
         )
+
+
+SANDBOX_DESCRIPTOR = ProviderDescriptor(
+    kind="sandbox_ats_fixture",
+    version="sandbox-ats-fixture-v1",
+    display_name="Local sandbox ATS jobs (not real employers)",
+    allowed_bases=frozenset({"local_fixture"}),
+    requires_network=False,
+)
+
+
+class SandboxFixtureProvider:
+    """Serves the bundled sandbox ATS jobs (Phase 6 adapter testing; not real employers)."""
+
+    descriptor = SANDBOX_DESCRIPTOR
+
+    def fetch_page(self, request: FetchRequest) -> FetchPage:
+        try:
+            records = json.loads((FIXTURE_DIR / SANDBOX_DATASET).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise InvalidProviderResponseError("Sandbox fixture dataset is unreadable") from exc
+        return FetchPage(records=records, listing_complete=True, source_url="fixture://sandbox")
 
 
 class StaticFixtureProvider:

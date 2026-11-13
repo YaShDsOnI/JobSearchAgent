@@ -15,7 +15,14 @@ from urllib.parse import urlsplit
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.db.models import TRACKER_STAGES, Application, TrackedApplication
+from app.db.models import (
+    SUBMISSION_LIVE_STATES,
+    TRACKER_STAGES,
+    Application,
+    ApplicationPackage,
+    ApplicationSubmission,
+    TrackedApplication,
+)
 from app.services.applications import (
     ApplicationError,
     current_package,
@@ -294,6 +301,19 @@ def mark_applied(
             status_code=409,
             existing_id=existing.id,
         )
+    in_flight = db.scalar(
+        select(ApplicationSubmission.id).where(
+            ApplicationSubmission.application_id == application.id,
+            ApplicationSubmission.state.in_(SUBMISSION_LIVE_STATES),
+        )
+    )
+    if in_flight is not None:
+        raise TrackerError(
+            "submission_in_progress",
+            "A sandbox submission for this job is in progress or finished; it is tracked "
+            "automatically",
+            status_code=409,
+        )
     if application.status == "skipped":
         raise TrackerError(
             "application_skipped",
@@ -338,6 +358,37 @@ def mark_applied(
         request_id=request_id,
     )
     _audit(db, entry, "tracker.created", request_id=request_id)
+    return entry
+
+
+def record_adapter_submission(
+    db: Session,
+    *,
+    application: Application,
+    package: ApplicationPackage,
+    destination_url: str,
+) -> TrackedApplication:
+    """A sandbox adapter submission was verified: record it (freezes the package)."""
+    content = package.package_json or {}
+    job = content.get("job") or {}
+    entry = TrackedApplication(
+        user_id=application.user_id,
+        application_id=application.id,
+        package_id=package.id,
+        review_hash=package.review_hash,
+        channel="sandbox_adapter",
+        company=clean_text(str(job.get("employer") or ""), "company", required=False)
+        or "Employer not listed",
+        role_title=clean_text(str(job.get("title") or ""), "role_title", required=False)
+        or "Role not listed",
+        location=clean_text(job.get("location_text"), "location", required=False),
+        job_url=destination_url[:MAX_URL],
+        applied_on=_today(),
+        stage="applied",
+    )
+    db.add(entry)
+    db.flush()
+    _audit(db, entry, "tracker.created", request_id=None)
     return entry
 
 

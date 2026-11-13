@@ -1,6 +1,6 @@
 # Application agent and human-in-the-loop flow
 
-Status: Phase 5C implements the application review package only (see "Phase 5C: review package implementation" below). Application submission, browser runners, and destination adapters are not implemented or authorized.
+Status: Phase 5C implements the application review package (see "Phase 5C: review package implementation"). Phase 6 (approved 2026-11-13) adds the application tracker and a browser adapter whose only destination is the local sandbox ATS (see "Phase 6: sandbox browser adapter"). No real employer or ATS can be targeted.
 
 ## Scope boundary
 
@@ -222,3 +222,71 @@ All write routes need the CSRF header. Every query is scoped to the signed-in ca
 - Audit actions are `tracker.created`, `tracker.updated`, and `tracker.deleted`, with the entry ID, channel, stage, and changed field names only. They never contain the company, role, link, or notes, because the set of companies someone applies to is sensitive.
 - `GET /profile/export` includes every entry. `DELETE /profile` deletes them. Deleting a private source keeps the candidate's tracker entries but unlinks them from the deleted application, because they are the candidate's own history.
 
+## Phase 6: sandbox browser adapter
+
+Decision record: `docs/roadmap.md`, "Decision record: Phase 6 approval (2026-11-13)". **The only destination is the local sandbox ATS** (`backend/sandbox_ats/`), a dummy ATS that runs on loopback and belongs to this project. No real employer or ATS can be targeted. Adding one needs that destination's written authorization and a new decision record. Implementation: `backend/app/services/submission/`, `backend/app/runner.py`, `backend/app/api/routes/submissions.py`.
+
+### Sandbox jobs and destination
+
+- Sandbox jobs come from a network-free source, `sandbox_ats_fixture` (basis `local_fixture`, tier `local`). It holds sanitized records that are clearly labeled "Sandbox Employer (not real)". Their `canonical_url` uses the reserved `.invalid` domain and is never fetched.
+- For a job from that source, the package destination is `{"kind": "sandbox_ats", "url": "<SANDBOX_ATS_ORIGIN>/jobs/<source_job_id>/apply", "host", "origin", "adapter_version"}` instead of `link_out`. It is part of the hashed package. A different origin or adapter version makes the package stale (`destination_changed`).
+- `SANDBOX_ATS_ORIGIN` must be `http://127.0.0.1:<port>` or `http://localhost:<port>`. Startup refuses any other value. The data-sharing notice says the package goes to the local sandbox and to no real employer.
+- Every other job keeps the `link_out` destination. No adapter exists for it.
+
+### Kill switches
+
+All of these must allow the run. They are checked at every step and again immediately before the submit click.
+
+1. `APPLICATION_SUBMISSION_ENABLED` (environment, default `false`).
+2. The `application_destinations` row for `sandbox_ats`: `enabled` and `policy_status = approved`. It is read fresh from the database at every check, so `python -m app.admin set-destination-enabled --destination sandbox_ats --disable --reason R` takes effect on the next check without a restart.
+3. A bounded attempt budget: the fill step may run at most 3 times (crash redelivery is harmless, because filling never clicks). The submit click happens at most once per submission, ever.
+
+### Two-step flow: fill for review, then submit
+
+The design requires an explicit candidate action *after the form is filled*. A browser context cannot be held open while waiting for a person, so the adapter runs twice, each time in a fresh, ephemeral context:
+
+1. **Start** (`POST /applications/{id}/submission` with the `review_hash` the candidate saw). This needs an active approval for the current package, a current binding, a sandbox destination, all kill switches open, and no tracker entry or live submission. It creates one `application_submissions` row and enqueues `application_fill`.
+2. **Fill** (runner). The runner opens the form, checks it against the adapter's form contract, fills it from the package only, and reads back what the page holds. It never clicks submit. It stores a **fill manifest**: for each field, the label, the value as displayed (also stored as SHA-256), and its provenance, plus the uploaded CV's SHA-256. The manifest hash is `fill_hash`. State becomes `final_review`.
+3. **Confirm** (`POST /applications/{id}/submission/confirm` with the `fill_hash` the candidate saw). It re-checks the approval, binding, and kill switches, then enqueues `application_submit`.
+4. **Submit** (runner). The runner opens a fresh context, fills the form again, and requires the new manifest to equal the confirmed `fill_hash`; otherwise it pauses with `form_changed`. It checks the kill switches once more, **commits `submit_clicked_at` before clicking submit**, then waits for the confirmation page's stable signal (`[data-confirmation-id]`).
+5. **Verify.** A confirmation ID gives `submitted` (verified). The confirmation ID, the manifest, and the CV hash are stored. A `sandbox_adapter` entry is added to the application tracker, which freezes the package as for link-out.
+
+`POST /applications/{id}/submission/cancel` is allowed until `submit_clicked_at` is set.
+
+### States
+
+`queued` → `filling` → `final_review` → `submit_queued` → `submitting` → `submitted`
+
+Other outcomes:
+
+- `paused`, with a reason: `captcha`, `mfa_or_login`, `unknown_required_field`, `attestation_required`, `form_changed`, `offsite_navigation`, `dialog`, `form_contract_mismatch`, or `page_unavailable`. The candidate can cancel or apply themselves. Nothing is bypassed or retried automatically.
+- `submitted_unverified`: the click happened but no confirmation signal arrived (timeout, error page, or a crash after the click).
+- `blocked`: a kill switch was closed, or the approval or binding failed at a re-check.
+- `failed`: an internal error before the click, or the attempt budget is spent.
+- `cancelled`.
+
+### Duplicate and crash safety
+
+- One submission per application package (unique `idempotency_key = <application_id>:<package_id>`). Start is idempotent: a repeated request returns the existing submission.
+- State changes are compare-and-set under a row lock, so double clicks and concurrent confirms create no second task or second run.
+- A redelivered `application_submit` task whose submission already has `submit_clicked_at` **never clicks again**. It moves to `submitted_unverified` and the candidate resolves it. A browser timeout is never a reason to retry a submission.
+- The runner claims only `application_fill` and `application_submit` tasks. The ingestion worker never runs them.
+
+### Browser runner rules as implemented
+
+- Chromium headless (Playwright). There is one new browser context per run, with no stored state, no downloads, service workers blocked, and the context closed in `finally`. Nothing is persisted from the browser.
+- Every request is intercepted, and only the exact destination origin is allowed. Any other request is aborted. A top-level navigation off-origin pauses the run with `offsite_navigation`.
+- JavaScript dialogs are dismissed and pause the run (`dialog`).
+- Before filling, the runner pauses on CAPTCHA markers (`.g-recaptcha`, `.h-captcha`, `[data-captcha]`, or a CAPTCHA iframe), a password or one-time-code field (`mfa_or_login`), or a required field that is not in the form contract (`unknown_required_field`). An attestation or e-signature control (`[data-attestation]`) is left to the candidate (`attestation_required`).
+- Values come only from package answers with status `answered`. Optional unanswered fields stay blank. The field set is fixed by the reviewed form contract, never by page text.
+- The CV upload is the packaged CV's PDF. It is decrypted into a private temporary directory, its SHA-256 is checked against the package, and it is deleted after the run.
+- No traces, screenshots, or HAR files are recorded. Errors store codes only.
+
+### Stored data
+
+Migration `0011_sandbox_submissions` adds two tables:
+
+- `application_destinations`: the destination policy and kill switch.
+- `application_submissions`: one row per application package, holding the state, pause reason, approval, review hash, fill manifest and `fill_hash`, CV SHA-256, `submit_clicked_at`, confirmation ID, attempts, and timestamps.
+
+The manifest holds the values that were sent, so it is personal data: it is exported and deleted with the profile and never placed in audit metadata. The application timeline records `submission_started`, `submission_filled`, `submission_confirmed`, `submission_clicked`, `submission_verified`, `submission_unverified`, `submission_paused`, `submission_blocked`, `submission_failed`, and `submission_cancelled`, with codes and hashes only.

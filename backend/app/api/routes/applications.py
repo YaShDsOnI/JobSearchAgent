@@ -1,7 +1,8 @@
-"""Phase 5C application review package endpoints.
+"""Application review package endpoints (Phase 5C).
 
-Preparation only. No route here, or anywhere else, sends, uploads, or submits an
-application; the destination is a link the candidate opens themselves.
+Preparation and approval only. No route here sends anything. Phase 6 adds a separate,
+gated adapter for the local sandbox ATS only (app/api/routes/submissions.py); every other
+job's destination is a link the candidate opens themselves.
 """
 
 from typing import Literal, cast
@@ -250,13 +251,15 @@ def _application_response(db: Session, application: Application) -> ApplicationR
         target_kind="link_out",
         skip_reason=application.skip_reason,
         can_approve=(
-            application.status == "open"
+            view.status != "applied"
+            and application.status == "open"
             and package is not None
             and not view.drift
             and not content.get("unresolved")
             and view.approval_state != "active"
         ),
         package=package_response,
+        submission_available=(content.get("destination") or {}).get("kind") == "sandbox_ats",
         binding=ApplicationBinding(
             state="stale" if view.drift else "current",
             drift=[ApplicationDrift(**item) for item in view.drift],

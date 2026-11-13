@@ -10,6 +10,9 @@
     python -m app.admin register-ashby --name N --board B --employer E --basis official_api \
         --evidence-ref REF --reviewed-by WHO --terms-version V [--approve] [--owner-email X]
     python -m app.admin set-connector-enabled --connector N (--enable | --disable) --reason R
+    python -m app.admin register-sandbox     # sandbox ATS jobs + destination (disabled)
+    python -m app.admin set-destination-enabled --destination sandbox_ats (--enable | --disable) \
+        --reason R
 """
 
 import argparse
@@ -35,6 +38,8 @@ from app.services.sources.connectors import (
 from app.services.sources.health import connector_health_report
 from app.services.sources.scheduler import ScheduleError, set_connector_schedule
 from app.services.storage import ArtifactStorage
+from app.services.submission.destinations import get_destination, set_destination_enabled
+from app.services.submission.sandbox_setup import register_sandbox
 
 
 def _actor() -> str:
@@ -75,6 +80,13 @@ def main(argv: list[str] | None = None) -> int:
     state.add_argument("--enable", action="store_true")
     state.add_argument("--disable", action="store_true")
     toggle.add_argument("--reason", required=True)
+    commands.add_parser("register-sandbox")
+    destination_toggle = commands.add_parser("set-destination-enabled")
+    destination_toggle.add_argument("--destination", required=True)
+    destination_state = destination_toggle.add_mutually_exclusive_group(required=True)
+    destination_state.add_argument("--enable", action="store_true")
+    destination_state.add_argument("--disable", action="store_true")
+    destination_toggle.add_argument("--reason", required=True)
     args = parser.parse_args(argv)
 
     with SessionLocal() as db:
@@ -144,6 +156,25 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps({"connector_id": connector.id, "name": connector.name,
                               "enabled": connector.enabled,
                               "policy_status": connector.policy_status}))
+        elif args.command == "register-sandbox":
+            summary = register_sandbox(
+                db, ArtifactStorage(get_settings()), get_settings(), actor=_actor()
+            )
+            print(json.dumps(summary, sort_keys=True))
+        elif args.command == "set-destination-enabled":
+            destination = get_destination(db, args.destination)
+            if destination is None:
+                print("error: unknown destination (run register-sandbox first)", file=sys.stderr)
+                return 1
+            try:
+                set_destination_enabled(
+                    db, destination, enabled=args.enable, actor=_actor(), reason=args.reason
+                )
+            except ValueError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 1
+            db.commit()
+            print(json.dumps({"destination": destination.name, "enabled": destination.enabled}))
         elif args.command == "set-connector-enabled":
             connector = db.scalar(
                 select(SourceConnector).where(SourceConnector.name == args.connector)
