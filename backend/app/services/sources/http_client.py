@@ -185,9 +185,35 @@ class ConnectorHttpClient:
                         raise InvalidProviderResponseError("Redirect without a location")
                     current = urljoin(current, location)
                     continue
-                self._check_status(response)
-                self._check_content_type(response, accept)
-                body = self._read_limited(response, deadline)
+                # Every response is recorded, including rejected ones (429, 5xx, 401/403,
+                # wrong type, oversized), so each outbound attempt reaches the audit log.
+                try:
+                    self._check_status(response)
+                    self._check_content_type(response, accept)
+                    body = self._read_limited(response, deadline)
+                except SourceError as exc:
+                    self._record(
+                        "response", current, started, status=response.status_code,
+                        redirects=hop, reason=exc.code.value,
+                    )
+                    raise
+                except httpx.TimeoutException as exc:
+                    # The body is streamed after `send()`, so read failures surface here.
+                    self._record(
+                        "error", current, started, status=response.status_code,
+                        redirects=hop, reason="timeout",
+                    )
+                    raise RetryableSourceError(
+                        SourceErrorCode.PROVIDER_TIMEOUT, "Provider response timed out"
+                    ) from exc
+                except httpx.HTTPError as exc:
+                    self._record(
+                        "error", current, started, status=response.status_code,
+                        redirects=hop, reason="transport",
+                    )
+                    raise ProviderUnavailableError(
+                        f"Provider transport error ({type(exc).__name__})"
+                    ) from exc
                 self._record(
                     "response", current, started, status=response.status_code,
                     bytes_read=len(body), redirects=hop,
