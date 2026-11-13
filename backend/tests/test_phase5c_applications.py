@@ -765,6 +765,9 @@ def test_no_route_can_submit_or_send_an_application():
         ("/api/v1/applications/{application_id}/approve", "post"),
         ("/api/v1/applications/{application_id}/approval/revoke", "post"),
         ("/api/v1/applications/{application_id}/skip", "post"),
+        # Phase 6 tracker: records that the candidate applied themselves; sends nothing
+        # (static network-import check in tests/test_application_tracker.py).
+        ("/api/v1/applications/{application_id}/applied", "post"),
     }
 
 

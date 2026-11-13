@@ -173,6 +173,25 @@ Evidence (2026-10-03):
 - Full reference deployment (`compose.yaml` profile `app`, `APP_ENV=production`, isolated project and volumes): migrations ran to head and the API reported ready. A scheduled fixture connector was enqueued by the scheduler and run by the worker. From inside the worker, the application's own client tunneled through the proxy (`TCP_TUNNEL/200` from the worker address). Non-allowlisted hosts and plain HTTP were refused by the application before reaching the proxy, and direct connections failed. `verify.py` from the worker passed 10/10. `docker compose stop` ended the worker and scheduler in under a second with exit code 0.
 - File secrets on Linux (backend image): a Kubernetes-style projected symlink (`name -> ..data/name`) resolved, and a symlink escaping `SECRETS_DIR` was refused.
 
+### Phase 6 application tracker tests
+
+`tests/test_application_tracker.py` makes no network calls. It covers:
+
+- marking applied binds the current package revision and hash, copies company, role, and link from the package, and records `marked_applied`;
+- once applied, rebuild, answer edits, approval, skip, and a second mark are refused with `already_applied`; removing the entry restores them (`unmarked_applied`);
+- skipped and other candidates' applications cannot be marked;
+- manual entries: listing (newest first), stage and text filters, and a summary that ignores filters;
+- duplicates (case- and whitespace-insensitive company and role, or the same link) are refused with the existing ID unless confirmed;
+- validation (blank, control characters, non-http(s) or credentialed links, future or pre-2000 dates, unknown stages, oversized notes, unknown fields);
+- locked fields on `link_out` entries, and audit events that carry field names but never company, role, or notes;
+- tenant isolation and CSRF;
+- export and deletion with the profile; private-source deletion keeps the entry but unlinks it;
+- a static check that the tracker imports no network library.
+
+The route inventory in `tests/test_phase5c_applications.py` lists `POST /applications/{id}/applied` explicitly and still forbids any submit or send route.
+
+Manual browser check (2026-11-13, Chrome on Windows, local throwaway database): the tracker summary, stage chips, search, inline stage change, adding an entry, the duplicate warning ("Add it anyway" or "Go back"), and "Mark as applied" on a review package (with the tracker refreshing and the package showing as frozen) all worked with no console errors. This check found and fixed two layout issues (label alignment, column widths shifting under filters) and a form that kept a cancelled draft.
+
 ### Running against PostgreSQL
 
 The suite defaults to in-memory SQLite. Set `TEST_DATABASE_URL` to a **disposable** PostgreSQL database, for example `postgresql+psycopg://<user>:<password>@127.0.0.1:<port>/<db>`. In that mode the test run:

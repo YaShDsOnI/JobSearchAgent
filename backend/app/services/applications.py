@@ -17,7 +17,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlsplit
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -35,6 +35,7 @@ from app.db.models import (
     ProfileFact,
     SourceConnector,
     StoredArtifact,
+    TrackedApplication,
     now_utc,
 )
 from app.services.audit import record_audit
@@ -694,7 +695,9 @@ def describe(
         if approval is not None
         else None
     )
-    if application.status == "skipped":
+    if is_applied(db, application):
+        status = "applied"
+    elif application.status == "skipped":
         status = "skipped"
     elif drift:
         status = "review_package_stale"
@@ -855,6 +858,8 @@ def prepare_application(
         .where(Application.user_id == user_id, Application.job_id == job.id)
         .with_for_update()
     )
+    if application is not None:
+        _ensure_not_applied(db, application)
     # Build (and so validate) before changing any state: a refused build leaves nothing behind.
     package_json, bindings = build_package(
         db,
@@ -898,7 +903,43 @@ def prepare_application(
     return application, created
 
 
+def is_applied(db: Session, application: Application) -> bool:
+    """True once the candidate recorded applying (a tracker entry is bound to it)."""
+    return (
+        db.scalar(
+            select(TrackedApplication.id).where(
+                TrackedApplication.application_id == application.id
+            )
+        )
+        is not None
+    )
+
+
+def _ensure_not_applied(db: Session, application: Application) -> None:
+    # The bound package revision is the record of what was prepared: it stays frozen.
+    if is_applied(db, application):
+        raise ApplicationError(
+            "already_applied",
+            "You marked this application as applied; remove that tracker entry to change it",
+        )
+
+
+def record_application_event(
+    db: Session,
+    application: Application,
+    event_type: str,
+    *,
+    actor: str,
+    metadata: dict[str, Any],
+    request_id: str | None,
+) -> None:
+    _record_event(
+        db, application, event_type, actor=actor, metadata=metadata, request_id=request_id
+    )
+
+
 def _require_open_current(db: Session, application: Application) -> ApplicationPackage:
+    _ensure_not_applied(db, application)
     if application.status != "open":
         raise ApplicationError(
             "application_skipped", "The application was skipped; prepare it again"
@@ -1025,6 +1066,7 @@ def skip_application(
     request_id: str | None = None,
 ) -> Application:
     application = owned_application(db, application_id, user_id, for_update=True)
+    _ensure_not_applied(db, application)
     if application.status == "skipped":
         return application
     if reason is not None and (
@@ -1048,6 +1090,12 @@ def delete_applications(db: Session, *, application_ids: list[str]) -> int:
     """Delete applications and everything bound to them (explicit order; SQLite has no FK)."""
     if not application_ids:
         return 0
+    # Tracker entries are the candidate's own history: unlink, never delete, them here.
+    db.execute(
+        update(TrackedApplication)
+        .where(TrackedApplication.application_id.in_(application_ids))
+        .values(application_id=None)
+    )
     db.execute(delete(ApprovalRecord).where(ApprovalRecord.application_id.in_(application_ids)))
     db.execute(
         delete(ApplicationEvent).where(ApplicationEvent.application_id.in_(application_ids))

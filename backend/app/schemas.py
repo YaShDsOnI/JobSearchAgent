@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -356,7 +356,9 @@ class DataRequestResponse(StrictModel):
     completed_at: datetime | None
 
 
-ApplicationStatus = Literal["review_package_ready", "approved", "review_package_stale", "skipped"]
+ApplicationStatus = Literal[
+    "review_package_ready", "approved", "review_package_stale", "skipped", "applied"
+]
 ApprovalState = Literal["active", "expired", "revoked", "invalidated"]
 
 
@@ -461,3 +463,61 @@ class ApplicationSummaryResponse(StrictModel):
     revision: int | None
     unresolved_count: int
     updated_at: datetime
+
+
+TrackerChannel = Literal["link_out", "external", "sandbox_adapter"]
+TrackerStage = Literal["applied", "interviewing", "offer", "accepted", "rejected", "withdrawn"]
+
+
+class TrackerCreate(StrictModel):
+    company: str = Field(min_length=1, max_length=255)
+    role_title: str = Field(min_length=1, max_length=255)
+    location: str | None = Field(default=None, max_length=255)
+    job_url: str | None = Field(default=None, max_length=2048)
+    applied_on: date | None = None
+    stage: TrackerStage = "applied"
+    notes: str | None = Field(default=None, max_length=2000)
+    allow_duplicate: bool = False
+
+
+class TrackerMarkApplied(StrictModel):
+    applied_on: date | None = None
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class TrackerUpdate(StrictModel):
+    company: str | None = Field(default=None, max_length=255)
+    role_title: str | None = Field(default=None, max_length=255)
+    location: str | None = Field(default=None, max_length=255)
+    job_url: str | None = Field(default=None, max_length=2048)
+    applied_on: date | None = None
+    stage: TrackerStage | None = None
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class TrackerEntryResponse(StrictModel):
+    id: str
+    application_id: str | None
+    package_id: str | None
+    review_hash: str | None
+    channel: TrackerChannel
+    company: str
+    role_title: str
+    location: str | None
+    job_url: str | None
+    applied_on: date
+    stage: TrackerStage
+    notes: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class TrackerSummaryResponse(StrictModel):
+    total: int
+    companies: int
+    by_stage: dict[str, int]
+
+
+class TrackerListResponse(StrictModel):
+    entries: list[TrackerEntryResponse]
+    summary: TrackerSummaryResponse

@@ -1,10 +1,11 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -490,6 +491,51 @@ class Application(Base):
     current_package_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     candidate_answers_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     skip_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, onupdate=now_utc
+    )
+
+
+TRACKER_CHANNELS = ("link_out", "external", "sandbox_adapter")
+TRACKER_STAGES = ("applied", "interviewing", "offer", "accepted", "rejected", "withdrawn")
+
+
+class TrackedApplication(Base):
+    """The candidate's record of where they applied (Phase 6 application tracker).
+
+    `link_out` entries are candidate-reported and bind the package revision that was current
+    when marked; `external` entries are typed by the candidate. Personal data: exported and
+    deleted with the profile, and never copied into audit metadata.
+    """
+
+    __tablename__ = "tracked_applications"
+    __table_args__ = (
+        CheckConstraint(
+            "channel IN ('link_out', 'external', 'sandbox_adapter')",
+            name="ck_tracked_applications_channel",
+        ),
+        CheckConstraint(
+            "stage IN ('applied', 'interviewing', 'offer', 'accepted', 'rejected', 'withdrawn')",
+            name="ck_tracked_applications_stage",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    application_id: Mapped[str | None] = mapped_column(
+        ForeignKey("applications.id", ondelete="SET NULL"), nullable=True, unique=True
+    )
+    package_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    review_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    channel: Mapped[str] = mapped_column(String(32))
+    company: Mapped[str] = mapped_column(String(255))
+    role_title: Mapped[str] = mapped_column(String(255))
+    location: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    job_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    applied_on: Mapped[date] = mapped_column(Date)
+    stage: Mapped[str] = mapped_column(String(32), default="applied")
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=now_utc, onupdate=now_utc
