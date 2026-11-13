@@ -26,3 +26,7 @@ backend/data/*
 !backend/data/.gitkeep
 *.bin
 tmp_*
+
+# Secret files for the reference deployment (file:<name> references)
+deploy/secrets/*
+!deploy/secrets/README.md

@@ -1,3 +1,38 @@
+# Default (`docker compose up`): PostgreSQL only, for local development.
+#
+# Reference deployment (`docker compose --profile app up --build`): migrations, API, worker,
+# scheduler, and the egress proxy. The worker and scheduler sit on the internal `backend`
+# network with no route out; the egress proxy is their only path to the internet.
+# Design: docs/source-connectors.md, "Deployment enforcement". Settings come from a local,
+# uncommitted `.env` next to this file. The app refuses to start with weak or missing secrets.
+
+x-backend-env: &backend-env
+  APP_ENV: ${APP_ENV:-production}
+  DATABASE_URL: postgresql+psycopg://jobfinderagent:${POSTGRES_PASSWORD}@postgres:5432/jobfinderagent
+  SESSION_SECRET: ${SESSION_SECRET:-}
+  COOKIE_SECURE: ${COOKIE_SECURE:-true}
+  CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost}
+  ARTIFACT_ENCRYPTION_KEY: ${ARTIFACT_ENCRYPTION_KEY:-}
+  ARTIFACT_STORAGE_PATH: /data/artifacts
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  SOURCE_NETWORK_ACCESS_ENABLED: ${SOURCE_NETWORK_ACCESS_ENABLED:-false}
+  SOURCE_EGRESS_ALLOWLIST: ${SOURCE_EGRESS_ALLOWLIST:-}
+  SOURCE_EGRESS_PROXY_URL: http://egress-proxy:3128
+  SECRETS_DIR: /run/secrets
+  ALERT_WEBHOOK_REF: ${ALERT_WEBHOOK_REF:-}
+  ALERT_WEBHOOK_HOST: ${ALERT_WEBHOOK_HOST:-}
+
+x-backend: &backend
+  build: ./backend
+  image: jobfinderagent-backend:local
+  restart: unless-stopped
+  environment: *backend-env
+  volumes:
+    - jobfinderagent-artifacts:/data/artifacts
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -10,11 +45,75 @@ services:
       - "5433:5432"
     volumes:
       - jobfinderagent-postgres:/var/lib/postgresql/data
+    networks:
+      - default
+      - backend
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U jobfinderagent -d jobfinderagent"]
       interval: 5s
       timeout: 5s
       retries: 10
 
+  migrate:
+    profiles: ["app"]
+    build: ./backend
+    image: jobfinderagent-backend:local
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    environment: *backend-env
+    networks: [backend]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *backend
+    profiles: ["app"]
+    # `edge` exists only to publish the port. The API never runs providers.
+    networks: [backend, edge]
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  worker:
+    <<: *backend
+    profiles: ["app"]
+    command: ["python", "-m", "app.worker", "--loop"]
+    networks: [backend]
+    stop_grace_period: 330s  # Longer than the 300 s ingestion lease: let a run finish.
+    volumes:
+      - jobfinderagent-artifacts:/data/artifacts
+      - ${SECRETS_HOST_DIR:-./deploy/secrets}:/run/secrets:ro
+
+  scheduler:
+    <<: *backend
+    profiles: ["app"]
+    command: ["python", "-m", "app.scheduler", "--loop"]
+    networks: [backend]
+    volumes:
+      - jobfinderagent-artifacts:/data/artifacts
+      - ${SECRETS_HOST_DIR:-./deploy/secrets}:/run/secrets:ro
+
+  egress-proxy:
+    profiles: ["app"]
+    build: ./deploy/egress-proxy
+    image: jobfinderagent-egress-proxy:local
+    restart: unless-stopped
+    environment:
+      # The union of the source allowlist and the alert webhook host. The application
+      # enforces its own (narrower) allowlists in addition.
+      EGRESS_ALLOWLIST: ${SOURCE_EGRESS_ALLOWLIST:-},${ALERT_WEBHOOK_HOST:-}
+      EGRESS_CLIENT_CIDR: ${BACKEND_SUBNET:-10.250.0.0/24}
+    networks: [backend, egress]
+
+networks:
+  backend:
+    internal: true  # No route out and no external DNS.
+    ipam:
+      config:
+        - subnet: ${BACKEND_SUBNET:-10.250.0.0/24}
+  edge: {}
+  egress: {}
+
 volumes:
   jobfinderagent-postgres:
+  jobfinderagent-artifacts:

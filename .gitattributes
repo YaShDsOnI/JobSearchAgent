@@ -1,0 +1,6 @@
+# Files executed or parsed inside Linux containers must keep LF endings on every checkout,
+# including Windows checkouts with core.autocrlf=true.
+*.sh text eol=lf
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+deploy/** text eol=lf

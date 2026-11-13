@@ -33,7 +33,15 @@ Phase 5A note (live integration security foundation):
 - Redirects are re-validated. Timeouts and decoded-size limits are enforced.
 - Credentials are environment references only, sent only to the addressed host, and redacted everywhere.
 - Every outbound attempt and every denial is audited without paths, queries, headers, or bodies.
-- This is application-layer enforcement. Production additionally needs network-layer egress filtering (firewall or egress proxy) as defense in depth; see the roadmap prerequisites.
+- This is application-layer enforcement. Network-layer enforcement is added by the deployment controls below.
+
+Live-access deployment controls (2026-11-13; design in `docs/source-connectors.md`, "Deployment enforcement"):
+
+- The worker and scheduler run on an internal-only network with no route out and no external DNS. Their only path out is a CONNECT-only egress proxy that allows port 443 on allowlisted hosts and refuses non-public destination addresses. Outside development and test, the application refuses to start with network access enabled and no proxy.
+- In proxy mode the host allowlist is enforced by both the application and the proxy. The destination-address check moves to the proxy, and the application's network backend can connect only to the proxy. TLS runs end to end, so the proxy never sees paths, queries, headers, or bodies.
+- Connector and alert secrets are `file:` references to secret-manager-projected files, with traversal and symlink escapes refused. Environment references are refused outside development and test.
+- Health alerts go to one pinned webhook host, carry no candidate data or private-source names, and never log the webhook URL.
+- Residual: the API container keeps a route out (it publishes the port) but never runs providers. The session secret and artifact key are still environment variables; moving them to files is a follow-up.
 
 ## Security objectives
 

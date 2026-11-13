@@ -113,11 +113,24 @@ The product owner approved Phase 5C with this scope:
 Remaining prerequisites before `SOURCE_NETWORK_ACCESS_ENABLED` may be turned on in any deployed environment (the 2026-09-30 smoke test enabled it only in a single disposable process):
 
 - a written source authorization record for each board (done for board `Ashby`; every other board needs its own);
-- network-layer egress enforcement (firewall or egress proxy) matching the allowlist, as defense in depth;
-- a production secret manager behind the credential-reference interface;
-- routing of `health-report` alerts and `source.health_changed` warnings to on-call;
-- a deployed scheduler timer and worker;
+- network-layer egress enforcement (firewall or egress proxy) matching the allowlist, as defense in depth (mechanism implemented: internal-only network plus CONNECT-only egress proxy; see below);
+- a production secret manager behind the credential-reference interface (mechanism implemented: `file:` references for secret-manager-projected files; the vendor waits on the hosting decision);
+- routing of `health-report` alerts and `source.health_changed` warnings to on-call (mechanism implemented: alert webhook; the on-call target must be configured per deployment);
+- a deployed scheduler timer and worker (implemented: continuous `scheduler` and `worker` services in the reference deployment);
 - sanitized contract fixtures for the chosen provider (done: `backend/tests/fixtures/ashby/board_v1.json`).
+
+The mechanisms above exist in code and in the reference deployment (`compose.yaml`, profile `app`). A real deployed environment still has to run them: choose hosting, project secrets from the chosen secret manager, point the alert webhook at the on-call system, and run the egress proxy verification in `docs/testing.md` against that environment. Until then, the statement above still applies: do not turn on `SOURCE_NETWORK_ACCESS_ENABLED` in a deployed environment.
+
+### Decision record: live-access deployment controls (2026-11-13)
+
+The product owner selected this track on 2026-11-13, ahead of Phase 6. It adds no provider, changes nothing that is fetched or stored about candidates, and sends nothing on a candidate's behalf. Design: `docs/source-connectors.md`, "Deployment enforcement".
+
+1. **Network-layer egress.** The worker and scheduler run on an internal-only network with no route out. Their only path out is a forward proxy (Squid 6.12 on Alpine 3.22) that allows only `CONNECT` to port 443 of allowlisted hosts and refuses non-public destination addresses. With `SOURCE_EGRESS_PROXY_URL` set, the application tunnels every source request through the proxy and can open no other connection. Outside `development` and `test`, startup fails if network access is enabled without a proxy. In proxy mode the proxy resolves DNS and performs the public-address check, because the worker has neither a route nor external DNS. The application keeps every other check (allowlists, HTTPS, port, IP literals, redirects, limits), so the host allowlist is enforced twice.
+2. **Secrets.** Credential references may be `file:<name>`, read from `SECRETS_DIR` at the start of each run. This is the interface that Docker and Kubernetes secrets, Vault Agent, and the cloud secret-store CSI drivers already provide. Outside `development` and `test`, `env:` references are refused. A vendor-specific adapter is deferred until hosting is decided.
+3. **Alerts.** The scheduler sends `firing` and `resolved` notifications for unhealthy or overdue sources to one operator-configured webhook. The webhook URL is a secret reference, and its host is pinned by `ALERT_WEBHOOK_HOST`. Delivery goes through the same egress controls. Notifications carry no candidate data, and private-source names are withheld.
+4. **Deployed scheduler and worker.** A backend container image and a `compose.yaml` profile (`app`) run migrations, the API, a continuous worker, a continuous scheduler, and the egress proxy.
+
+Stored-data change: none. New audit actions only: `source.alert_notified` and `source.alert_failed`.
 
 Add exactly one live, read-only discovery provider behind the Phase 4 registry, and build the application review package for jobs from it. Nothing is submitted.
 
@@ -185,4 +198,4 @@ Pre-Phase-4 snapshots are versioned as `legacy-v0`. Their first Phase 4 ingestio
 
 ## Recommended next implementation phase
 
-Phase 5B is implemented: the read-only Ashby public Job Posting API is registered as the only live provider, covered by sanitized contract fixtures, and validated by a live read-only smoke test (see `docs/testing.md`). Live access stays disabled by default. The remaining deployment prerequisites above must be met before network access is turned on in any deployed environment. Phase 5C is implemented: an immutable, hashed review package per job with a live binding check, candidate approval (24-hour expiry), and a link-out destination. Nothing is sent. Evidence is in `docs/testing.md`. The next step is Phase 6, one permitted application destination (submission adapter). It needs its own written authorization for a specific destination and a new product-owner approval before work starts. Do not add further live providers or implement application submission or browser automation without that approval.
+Phase 5B is implemented: the read-only Ashby public Job Posting API is registered as the only live provider, covered by sanitized contract fixtures, and validated by a live read-only smoke test (see `docs/testing.md`). Live access stays disabled by default. The remaining deployment prerequisites above must be met before network access is turned on in any deployed environment. Phase 5C is implemented: an immutable, hashed review package per job with a live binding check, candidate approval (24-hour expiry), and a link-out destination. Nothing is sent. Evidence is in `docs/testing.md`. The live-access deployment controls (decision record above) implement the mechanisms for the remaining prerequisites; a real deployed environment still has to run and verify them. The next step is Phase 6, one permitted application destination (submission adapter). It needs its own written authorization for a specific destination and a new product-owner approval before work starts. Do not add further live providers or implement application submission or browser automation without that approval.

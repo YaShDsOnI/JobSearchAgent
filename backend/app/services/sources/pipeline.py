@@ -141,11 +141,15 @@ def build_connector_http_client(
         connector_hosts=connector_fetch_hosts(connector),
         path_prefixes=tuple(str(item) for item in config.get("fetch_path_prefixes", []) or []),
     )
+    proxy = settings.source_egress_proxy
     return ConnectorHttpClient(
-        guard=EgressGuard(policy, resolver),
+        # Behind the egress proxy, the proxy resolves DNS and refuses non-public addresses.
+        guard=EgressGuard(policy, resolver, resolve_dns=proxy is None),
         limits=HttpLimits.from_settings(settings),
-        credential=resolve_credential(config),
-        transport=transport,  # Tests only; production uses the DNS-pinning transport.
+        credential=resolve_credential(config, settings),
+        # Tests only; production uses the proxy tunnel or the DNS-pinning transport.
+        transport=transport,
+        proxy=proxy,
     )
 
 

@@ -10,6 +10,12 @@ Every outbound request passes two gates:
    validated address. TLS still verifies the certificate against the hostname, so the
    check and the connection use the same DNS answer and rebinding cannot swap in an
    internal address between them.
+
+With an egress proxy configured (`SOURCE_EGRESS_PROXY_URL`), gate 2 is replaced by
+`ProxyTunnelTransport`: it re-checks the host, tunnels with `CONNECT host:443`, and its
+network backend can connect to nothing but the proxy. The proxy resolves DNS and refuses
+non-public destinations (the worker has no route or external DNS of its own), so the guard
+skips its own resolution in that mode; every other check in gate 1 still applies.
 """
 
 import ipaddress
@@ -120,9 +126,17 @@ class EgressPolicy:
 
 
 class EgressGuard:
-    def __init__(self, policy: EgressPolicy, resolver: Resolver = system_resolver) -> None:
+    def __init__(
+        self,
+        policy: EgressPolicy,
+        resolver: Resolver = system_resolver,
+        *,
+        resolve_dns: bool = True,
+    ) -> None:
         self.policy = policy
         self._resolver = resolver
+        # False only behind the egress proxy, which resolves and checks addresses itself.
+        self.resolve_dns = resolve_dns
 
     def check_url(self, url: str) -> str:
         """Validate a request URL and return its canonical host. Raises EgressDenied."""
@@ -160,7 +174,8 @@ class EgressGuard:
             path_within(parts.path or "/", prefix) for prefix in self.policy.path_prefixes
         ):
             raise EgressDenied("path_not_allowlisted", host)
-        self.resolve_public(host, port or 443)
+        if self.resolve_dns:
+            self.resolve_public(host, port or 443)
         return host
 
     def resolve_public(self, host: str, port: int) -> list[IPAddress]:
@@ -235,9 +250,7 @@ class PinnedTransport(httpx.HTTPTransport):
         inner_backend: httpcore.NetworkBackend | None = None,
         ssl_context: ssl.SSLContext | None = None,
     ) -> None:
-        context = ssl_context or ssl.create_default_context()
-        context.check_hostname = True
-        context.verify_mode = ssl.CERT_REQUIRED
+        context = _secure_context(ssl_context)
         super().__init__(verify=context, trust_env=False, retries=0)
         self._pool = httpcore.ConnectionPool(
             ssl_context=context,
@@ -245,3 +258,94 @@ class PinnedTransport(httpx.HTTPTransport):
             retries=0,
             network_backend=PinnedNetworkBackend(guard, inner_backend),
         )
+
+
+def _secure_context(ssl_context: ssl.SSLContext | None) -> ssl.SSLContext:
+    context = ssl_context or ssl.create_default_context()
+    context.check_hostname = True
+    context.verify_mode = ssl.CERT_REQUIRED
+    return context
+
+
+class ProxyTunnelBackend(httpcore.NetworkBackend):
+    """Network backend that can connect to the configured egress proxy and nothing else."""
+
+    def __init__(
+        self, proxy_host: str, proxy_port: int, inner: httpcore.NetworkBackend | None = None
+    ) -> None:
+        self._host = proxy_host.lower().rstrip(".")
+        self._port = proxy_port
+        self._inner = inner or httpcore.SyncBackend()
+
+    def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: Iterable[Any] | None = None,
+    ) -> httpcore.NetworkStream:
+        if (host or "").lower().rstrip(".") != self._host or port != self._port:
+            raise EgressDenied("proxy_only", host)
+        return self._inner.connect_tcp(
+            host,
+            port,
+            timeout=timeout,
+            local_address=local_address,
+            socket_options=socket_options,
+        )
+
+    def connect_unix_socket(self, *args: Any, **kwargs: Any) -> httpcore.NetworkStream:
+        raise EgressDenied("unix_socket_not_allowed")
+
+    def sleep(self, seconds: float) -> None:
+        self._inner.sleep(seconds)
+
+
+class ProxyTunnelTransport(httpx.HTTPTransport):
+    """Tunnels every request through the egress proxy with CONNECT, then TLS end to end.
+
+    The certificate and SNI are verified against the target hostname, so the proxy can
+    neither read nor alter the traffic. The pool is replaced after construction, as in
+    `PinnedTransport`; `tests/test_live_access_deployment.py` asserts the wiring.
+    """
+
+    def __init__(
+        self,
+        guard: EgressGuard,
+        proxy: tuple[str, int],
+        *,
+        inner_backend: httpcore.NetworkBackend | None = None,
+        ssl_context: ssl.SSLContext | None = None,
+    ) -> None:
+        host, port = proxy
+        context = _secure_context(ssl_context)
+        super().__init__(verify=context, trust_env=False, retries=0)
+        self._guard = guard
+        self._pool = httpcore.HTTPProxy(
+            proxy_url=f"http://{host}:{port}",
+            ssl_context=context,
+            max_connections=4,
+            retries=0,
+            network_backend=ProxyTunnelBackend(host, port, inner_backend),
+        )
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        # Defense in depth: the guard has already checked this URL. Only an HTTPS request
+        # to an allowlisted host on 443 is ever tunneled. Plain HTTP would be forwarded by
+        # the proxy in clear text, so it is refused here.
+        host = normalize_host(request.url.host)
+        if request.url.scheme != "https":
+            raise EgressDenied("scheme_not_https", host)
+        if (request.url.port or 443) not in ALLOWED_PORTS:
+            raise EgressDenied("port_not_allowed", host)
+        if host is None or not self._guard.policy.host_allowed(host):
+            raise EgressDenied("host_not_allowlisted", request.url.host)
+        return super().handle_request(request)
+
+
+def build_transport(guard: EgressGuard, proxy: tuple[str, int] | None) -> httpx.BaseTransport:
+    """The production transport: proxy tunnel when a proxy is configured, else DNS pinning."""
+    if proxy is not None:
+        return ProxyTunnelTransport(guard, proxy)
+    return PinnedTransport(guard)
