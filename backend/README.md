@@ -6,7 +6,12 @@ Phase 4 local/fixture scope. This package provides the authenticated profile/pre
 
 1. Copy `.env.example` to `.env`.
 2. Generate secrets outside source control. For example, generate a 32-byte URL-safe base64 artifact key and a long session secret with a system secret generator.
-3. Install the package and development extras: `python -m pip install -e ".[dev]"`.
+3. Create a project virtual environment in `backend/.venv` (ignored by git) and install the package with development extras into it. Do not use a shared global interpreter: it may hold dependency versions below the floors in `pyproject.toml`.
+   - `python -m venv .venv`
+   - Windows: `.venv\Scripts\activate`; Linux/macOS: `source .venv/bin/activate`
+   - `python -m pip install -e ".[dev]"`
+
+   Run every command below from the activated environment.
 4. Apply migrations: `alembic upgrade head`.
 5. Optionally load the sanitized local fixture catalog through the discovery pipeline: `python -m app.seed_fixture`.
 6. Start the API: `python -m uvicorn app.main:app --reload --port 8000`.
