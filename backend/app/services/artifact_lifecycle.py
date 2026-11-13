@@ -16,6 +16,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from app.db.models import (
+    Application,
     CVClaim,
     CVVersion,
     JobAnalysis,
@@ -31,6 +32,7 @@ from app.db.models import (
     Task,
     now_utc,
 )
+from app.services.applications import delete_applications
 from app.services.audit import record_audit
 from app.services.sources.dedup import reconcile_duplicate_link
 from app.services.sources.errors import (
@@ -215,6 +217,12 @@ def delete_private_source(
     )
 
     # Explicit deletes in dependency order (SQLite does not enforce FK cascades).
+    application_count = delete_applications(
+        db,
+        application_ids=list(
+            db.scalars(select(Application.id).where(Application.job_id.in_(job_ids))).all()
+        ),
+    )
     db.execute(delete(CVClaim).where(CVClaim.cv_version_id.in_(cv_ids)))
     db.execute(delete(CVVersion).where(CVVersion.id.in_(cv_ids)))
     db.execute(
@@ -252,6 +260,7 @@ def delete_private_source(
         "job_snapshots": len(snapshot_ids),
         "cv_versions": len(cv_ids),
         "match_runs": len(match_ids),
+        "applications": application_count,
         "artifacts": len(artifact_ids),
         "tasks_cancelled": cancelled,
     }

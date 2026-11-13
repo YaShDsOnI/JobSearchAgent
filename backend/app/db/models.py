@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -459,6 +460,107 @@ class Task(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=now_utc, onupdate=now_utc
     )
+
+
+class Application(Base):
+    """A candidate's review of one job. Phase 5C: preparation only; nothing is sent.
+
+    `status` records only the candidate's decision (open/skipped). The state shown to the
+    candidate (stale, ready, approved) is derived on read from the current package, its live
+    binding check, and its approval; see `app/services/applications.py`.
+    """
+
+    __tablename__ = "applications"
+    __table_args__ = (
+        UniqueConstraint("user_id", "job_id", name="uq_application_user_job"),
+        CheckConstraint("status IN ('open', 'skipped')", name="ck_applications_status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    job_id: Mapped[str] = mapped_column(
+        ForeignKey("job_postings.id", ondelete="RESTRICT"), index=True
+    )
+    connector_id: Mapped[str] = mapped_column(String(36))
+    source_job_id: Mapped[str] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(32), default="open")
+    target_kind: Mapped[str] = mapped_column(String(32), default="link_out")
+    # No FK: packages reference the application, and the pointer is set after the package
+    # row exists (avoids a circular foreign key).
+    current_package_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    candidate_answers_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    skip_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, onupdate=now_utc
+    )
+
+
+class ApplicationPackage(Base):
+    """One immutable, hashed revision of an application review package."""
+
+    __tablename__ = "application_packages"
+    __table_args__ = (
+        UniqueConstraint("application_id", "revision", name="uq_application_package_revision"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    application_id: Mapped[str] = mapped_column(
+        ForeignKey("applications.id", ondelete="CASCADE"), index=True
+    )
+    revision: Mapped[int] = mapped_column(Integer)
+    review_hash: Mapped[str] = mapped_column(String(64))
+    package_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    job_snapshot_id: Mapped[str] = mapped_column(
+        ForeignKey("job_snapshots.id", ondelete="RESTRICT"), index=True
+    )
+    match_run_id: Mapped[str] = mapped_column(
+        ForeignKey("match_runs.id", ondelete="RESTRICT"), index=True
+    )
+    cv_version_id: Mapped[str] = mapped_column(
+        ForeignKey("cv_versions.id", ondelete="RESTRICT"), index=True
+    )
+    profile_version_id: Mapped[str] = mapped_column(String(36))
+    preference_version_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    connector_id: Mapped[str] = mapped_column(String(36))
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    superseded_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+
+class ApprovalRecord(Base):
+    __tablename__ = "approval_records"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    application_id: Mapped[str] = mapped_column(
+        ForeignKey("applications.id", ondelete="CASCADE"), index=True
+    )
+    package_id: Mapped[str] = mapped_column(
+        ForeignKey("application_packages.id", ondelete="CASCADE"), index=True
+    )
+    reviewed_payload_hash: Mapped[str] = mapped_column(String(64))
+    approved_by_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE")
+    )
+    approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class ApplicationEvent(Base):
+    """Append-only application timeline. Metadata never holds answer values."""
+
+    __tablename__ = "application_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    application_id: Mapped[str] = mapped_column(
+        ForeignKey("applications.id", ondelete="CASCADE"), index=True
+    )
+    event_type: Mapped[str] = mapped_column(String(64))
+    actor: Mapped[str] = mapped_column(String(64))
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
 
 class AuditEvent(Base):

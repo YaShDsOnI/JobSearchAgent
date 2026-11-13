@@ -1,5 +1,5 @@
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
-import { api, Artifact, currentUser, CVVersion, Job, Match, MatchReview, Profile, User } from "./api";
+import { api, Application, Artifact, currentUser, CVVersion, Job, Match, MatchReview, Profile, User } from "./api";
 
 type AuthMode = "login" | "register";
 
@@ -169,6 +169,7 @@ function Dashboard({ user, onSignedOut, error, setError }: { user: User; onSigne
   const [role, setRole] = useState("");
   const [review, setReview] = useState<MatchReview | null>(null);
   const [cv, setCv] = useState<CVVersion | null>(null);
+  const [application, setApplication] = useState<Application | null>(null);
 
   useEffect(() => {
     Promise.all([api<Job[]>("/api/v1/jobs"), api<Profile | null>("/api/v1/profile")])
@@ -253,6 +254,23 @@ function Dashboard({ user, onSignedOut, error, setError }: { user: User; onSigne
     }
   }
 
+  async function applicationAction(path: string, init: RequestInit, failure: string) {
+    try {
+      setApplication(await api<Application>(path, init));
+      setError("");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : failure);
+    }
+  }
+
+  function jsonPost(body: unknown, method = "POST"): RequestInit {
+    return { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+  }
+
+  function prepareApplication(jobId: string, cvVersionId: string) {
+    return applicationAction(`/api/v1/jobs/${jobId}/applications`, jsonPost({ cv_version_id: cvVersionId }), "Unable to prepare application package");
+  }
+
   async function signOut() {
     try {
       await api<void>("/api/v1/auth/logout", { method: "POST" });
@@ -282,9 +300,10 @@ function Dashboard({ user, onSignedOut, error, setError }: { user: User; onSigne
       {error && <div className="notice error" role="alert">{error}</div>}
       <main className="dashboard-grid">
         <ProfilePanel profile={profile} onUpdated={refreshProfile} setError={setError} />
-        <section className="panel hero"><p className="eyebrow">Phase 3 · Factual CV drafting</p><h2>Read-only job discovery with truthful CV previews</h2><p className="muted">Jobs are provenance-labelled fixture records. Eligibility, skill/experience fit, and preferences are evaluated separately using confirmed facts. CVs are generated locally from verified facts and require your approval; application submission remains unavailable.</p><div className="status-row"><span className="status-dot" />{profileStatus}</div></section>
+        <section className="panel hero"><p className="eyebrow">Phase 5C · Application review package</p><h2>Prepare and review applications, then apply yourself</h2><p className="muted">Jobs come from authorized, provenance-labelled sources. Eligibility, skill/experience fit, and preferences are evaluated separately using confirmed facts. CVs are generated from verified facts and need your approval. A review package binds the exact job, CV, and answers you approve; JobFinderAgent never sends an application.</p><div className="status-row"><span className="status-dot" />{profileStatus}</div></section>
         {review && <ReviewPanel review={review} onResolve={resolveReview} />}
-        {cv && <CVPanel version={cv} onDecision={decideCv} />}
+        {cv && <CVPanel version={cv} onDecision={decideCv} onPrepare={() => prepareApplication(cv.job_id, cv.id)} />}
+        {application && <ApplicationPanel application={application} onRebuild={() => prepareApplication(application.job_id, application.package?.cv_version_id ?? "")} onAnswer={(key, value) => applicationAction(`/api/v1/applications/${application.id}/answers/${key}`, jsonPost({ value }, "PUT"), "Unable to save answer")} onApprove={() => applicationAction(`/api/v1/applications/${application.id}/approve`, jsonPost({ review_hash: application.package?.review_hash }), "Unable to approve package")} onRevoke={() => applicationAction(`/api/v1/applications/${application.id}/approval/revoke`, { method: "POST" }, "Unable to revoke approval")} onSkip={() => applicationAction(`/api/v1/applications/${application.id}/skip`, jsonPost({}), "Unable to skip application")} />}
         <section className="panel"><div className="section-heading"><div><p className="eyebrow">Profile preferences</p><h2>Tell us what you want</h2></div></div><form onSubmit={savePreferences} className="inline-form"><label className="grow">Target role<input value={role} onChange={(event) => setRole(event.target.value)} placeholder="e.g. Platform Engineer" /></label><button type="submit">Save version</button></form><p className="muted small">Work authorization remains explicit and is never inferred from location or profile data.</p></section>
         <section className="panel jobs-panel"><div className="section-heading"><div><p className="eyebrow">Catalog</p><h2>Available job records</h2></div><span className="count">{jobs.length}</span></div>{loading ? <p className="muted">Loading catalog…</p> : jobs.length === 0 ? <div className="empty"><h3>No approved job feed is connected</h3><p className="muted">Only authorized sources are ingested; the bundled source is a sanitized local fixture. No scraping or unauthorized integration is active.</p></div> : <div className="job-list">{jobs.map((job) => <JobCard key={job.id} job={job} match={matches[job.id]} onMatch={runMatch} onReview={openReview} onDraft={draftCv} />)}</div>}</section>
       </main>
@@ -301,11 +320,40 @@ function ReviewPanel({ review, onResolve }: { review: MatchReview; onResolve: (d
   return <section className="panel"><div className="section-heading"><div><p className="eyebrow">Human review</p><h2>Resolve unknown eligibility evidence</h2></div><span className="count">{review.status}</span></div><ul>{review.reasons.map((reason) => <li key={reason.code}>{reason.message}</li>)}</ul><p className="muted small">Job evidence and candidate facts are shown for review. No unknown value is treated as a positive assumption.</p><details><summary>Evidence</summary><ul>{review.job_evidence.map((item) => <li key={item.id}><strong>{item.field_path}:</strong> {item.quote}</li>)}{review.candidate_facts.map((fact) => <li key={fact.id}><strong>{fact.fact_type}:</strong> {JSON.stringify(fact.value)} ({fact.confirmation_status})</li>)}</ul></details><div className="button-row">{codes.has("authorization_geography_unknown") && <button type="button" onClick={() => onResolve("accept_remote_geography")}>Accept remote geography</button>}{codes.has("authorization_unconfirmed") && <button type="button" onClick={() => onResolve("authorize_for_job_geography")}>Confirm authorization</button>}{codes.has("sponsorship_unknown") && <button type="button" onClick={() => onResolve("confirm_sponsorship_compatible")}>Confirm sponsorship compatibility</button>}<button className="danger" type="button" onClick={() => onResolve("mark_ineligible")}>Mark ineligible</button></div></section>;
 }
 
-function CVPanel({ version, onDecision }: { version: CVVersion; onDecision: (decision: "approve" | "reject", note: string) => Promise<void> }) {
+function CVPanel({ version, onDecision, onPrepare }: { version: CVVersion; onDecision: (decision: "approve" | "reject", note: string) => Promise<void>; onPrepare: () => Promise<void> }) {
   const [note, setNote] = useState("");
   const sections = version.claims.reduce<Record<string, typeof version.claims>>((grouped, claim) => {
     grouped[claim.section] = [...(grouped[claim.section] ?? []), claim];
     return grouped;
   }, {});
-  return <section className="panel"><div className="section-heading"><div><p className="eyebrow">Factual CV preview</p><h2>Review verified claims before approval</h2></div><span className="count">{version.status}</span></div>{version.unresolved_items.length > 0 && <div className="notice error"><strong>Unresolved information</strong><ul>{version.unresolved_items.map((item) => <li key={item}>{item}</li>)}</ul></div>}<p className="muted small">Every displayed claim has confirmed fact provenance. Job wording only guides selection and does not add candidate facts.</p>{Object.entries(sections).map(([section, claims]) => <div key={section}><h3>{section}</h3><ul>{claims.map((claim) => <li key={claim.id}>{claim.text}<div className="muted small">Verified fact IDs: {claim.source_fact_ids.join(", ")}</div></li>)}</ul></div>)}<div className="button-row"><a className="secondary" href={`/api/v1/cv-versions/${version.id}/artifact/pdf`}>Download PDF</a><a className="secondary" href={`/api/v1/cv-versions/${version.id}/artifact/docx`}>Download DOCX</a>{version.status === "validated" && <><button type="button" onClick={() => onDecision("approve", "")}>Approve CV</button><button className="danger" type="button" onClick={() => onDecision("reject", note)}>Reject CV</button></>}</div>{version.status === "validated" && <label>Rejection note (required to reject)<input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Explain what should be revised" /></label>}</section>;
+  return <section className="panel"><div className="section-heading"><div><p className="eyebrow">Factual CV preview</p><h2>Review verified claims before approval</h2></div><span className="count">{version.status}</span></div>{version.unresolved_items.length > 0 && <div className="notice error"><strong>Unresolved information</strong><ul>{version.unresolved_items.map((item) => <li key={item}>{item}</li>)}</ul></div>}<p className="muted small">Every displayed claim has confirmed fact provenance. Job wording only guides selection and does not add candidate facts.</p>{Object.entries(sections).map(([section, claims]) => <div key={section}><h3>{section}</h3><ul>{claims.map((claim) => <li key={claim.id}>{claim.text}<div className="muted small">Verified fact IDs: {claim.source_fact_ids.join(", ")}</div></li>)}</ul></div>)}<div className="button-row"><a className="secondary" href={`/api/v1/cv-versions/${version.id}/artifact/pdf`}>Download PDF</a><a className="secondary" href={`/api/v1/cv-versions/${version.id}/artifact/docx`}>Download DOCX</a>{version.status === "approved" && <button type="button" onClick={onPrepare}>Prepare application package</button>}{version.status === "validated" && <><button type="button" onClick={() => onDecision("approve", "")}>Approve CV</button><button className="danger" type="button" onClick={() => onDecision("reject", note)}>Reject CV</button></>}</div>{version.status === "validated" && <label>Rejection note (required to reject)<input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Explain what should be revised" /></label>}</section>;
+}
+
+const STATUS_LABELS: Record<Application["status"], string> = {
+  review_package_ready: "Ready for review",
+  approved: "Approved (nothing sent)",
+  review_package_stale: "Out of date",
+  skipped: "Skipped",
+};
+
+function ApplicationPanel({ application, onAnswer, onApprove, onRevoke, onSkip, onRebuild }: { application: Application; onAnswer: (key: string, value: string | null) => Promise<void>; onApprove: () => Promise<void>; onRevoke: () => Promise<void>; onSkip: () => Promise<void>; onRebuild: () => Promise<void> }) {
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const pkg = application.package;
+  if (!pkg) return null;
+  const job = pkg.content.job;
+  const destination = pkg.destination && pkg.destination.url.startsWith("https://") ? pkg.destination : null;
+  const editable = application.decision === "open" && application.binding.state === "current";
+  return <section className="panel" aria-labelledby="application-title"><div className="section-heading"><div><p className="eyebrow">Application review package · revision {pkg.revision}</p><h2 id="application-title">{job.title} · {job.employer}</h2></div><span className="count">{STATUS_LABELS[application.status]}</span></div>
+    <div className="notice info"><strong>Nothing is sent by JobFinderAgent.</strong> {pkg.content.data_sharing_notice.text}</div>
+    {application.binding.state === "stale" && <div className="notice error"><strong>This package is out of date.</strong><ul>{application.binding.drift.map((item) => <li key={item.code}>{item.message}</li>)}</ul>{application.decision === "open" && <button className="secondary" type="button" onClick={onRebuild}>Rebuild package</button>}</div>}
+    <p className="muted small">Source: {pkg.content.source_policy.name} ({pkg.content.source_policy.authorization_basis ?? "unknown basis"}, terms {pkg.content.source_policy.terms_version}) · snapshot v{job.snapshot_version}{job.retrieved_at ? ` retrieved ${new Date(job.retrieved_at).toLocaleString()}` : ""} · {job.location_text ?? "Location unknown"}</p>
+    <div className="match-summary"><p><strong>Eligibility:</strong> {pkg.content.match.eligibility.status}</p><p><strong>Skill/experience fit:</strong> {pkg.content.match.fit.score}/100</p><p><strong>Preference fit:</strong> {pkg.content.match.preference.score}/100</p></div>
+    <h3>CV</h3><p className="muted small">Approved CV version {pkg.content.cv.cv_version_id} · PDF SHA-256 <code>{pkg.content.cv.pdf_sha256 ?? "unavailable"}</code></p><div className="button-row"><a className="secondary" href={`/api/v1/cv-versions/${pkg.cv_version_id}/artifact/pdf`}>Download exact PDF</a><a className="secondary" href={`/api/v1/cv-versions/${pkg.cv_version_id}/artifact/docx`}>Download DOCX</a></div>
+    <h3>Answers</h3><p className="muted small">Answers come only from confirmed profile facts or from what you type here. Unknown stays unresolved. * required</p>
+    <div className="answer-list">{pkg.answers.map((item) => <div className={`answer-row ${item.status}`} key={item.question_key}><div><strong>{item.question_text}{item.required ? " *" : ""}</strong><div className="muted small">{item.status === "answered" ? `${item.value} · ${item.provenance === "candidate_entered" ? "entered by you" : `from confirmed fact ${item.source_fact_ids.join(", ")}`}` : item.status === "left_blank" ? "Will be left blank" : `Unresolved: ${item.reason ?? "no answer"}`}</div></div>{editable && <div className="answer-edit">{item.kind === "yes_no" ? <select aria-label={`Answer: ${item.question_text}`} value={drafts[item.question_key] ?? ""} onChange={(event) => setDrafts({ ...drafts, [item.question_key]: event.target.value })}><option value="">Choose…</option><option value="yes">Yes</option><option value="no">No</option></select> : <input aria-label={`Answer: ${item.question_text}`} maxLength={500} value={drafts[item.question_key] ?? ""} onChange={(event) => setDrafts({ ...drafts, [item.question_key]: event.target.value })} placeholder="Your answer" />}<button className="secondary" type="button" disabled={!drafts[item.question_key]} onClick={() => onAnswer(item.question_key, drafts[item.question_key]).then(() => setDrafts({ ...drafts, [item.question_key]: "" }))}>Save</button>{item.provenance === "candidate_entered" && <button className="secondary" type="button" onClick={() => onAnswer(item.question_key, null)}>Clear</button>}</div>}</div>)}</div>
+    {pkg.warnings.length > 0 && <details><summary>Warnings ({pkg.warnings.length})</summary><ul>{pkg.warnings.map((item, index) => <li key={`${item.code}-${index}`}>{item.message ?? `${item.question_key}: ${item.reason}`}</li>)}</ul></details>}
+    {application.approval && <p className="muted small">Approval: {application.approval.state}{application.approval.state === "active" ? ` until ${new Date(application.approval.expires_at).toLocaleString()}` : ""}{application.approval.revoked_reason ? ` (${application.approval.revoked_reason})` : ""}</p>}
+    <p className="muted small">Review hash: <code>{pkg.review_hash}</code></p>
+    <div className="button-row">{application.can_approve && <button type="button" onClick={onApprove}>Approve this exact package</button>}{application.approval?.state === "active" && <button className="secondary" type="button" onClick={onRevoke}>Revoke approval</button>}{destination && application.decision === "open" && <a className="secondary" href={destination.url} target="_blank" rel="noopener noreferrer">Apply yourself on {destination.host}</a>}{application.decision === "open" && <button className="danger" type="button" onClick={onSkip}>Skip this job</button>}</div>
+  </section>;
 }

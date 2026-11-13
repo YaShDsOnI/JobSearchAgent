@@ -1,6 +1,6 @@
 # Database design
 
-Status: Phase 5A/5B schema implemented through Alembic migration `0008_connector_schedule` (Phase 5B added no schema changes; Ashby connectors use the existing connector, authorization, and snapshot tables); validated on PostgreSQL 17 and SQLite with no model/migration drift. Production hardening remains pending.
+Status: schema implemented through Alembic migration `0009_application_review_package` (Phase 5C application tables; Phase 5B added no schema changes); validated on PostgreSQL 17 and SQLite with no model/migration drift. Production hardening remains pending.
 
 ## Principles
 
@@ -35,10 +35,11 @@ Status: Phase 5A/5B schema implemented through Alembic migration `0008_connector
 | `cv_versions` | id, user_id, job_id, job_snapshot_id, profile_version_id, match_run_id, generator/template versions, content_hash, docx/pdf artifact IDs, status, approval metadata | Immutable; exact profile/job/match inputs and rendered artifacts are retained; approved artifacts are never overwritten |
 | `cv_versions` supersession | superseded_at, superseded_reason, superseded_detail_json | Records why a CV stopped being current; see `docs/cv-engine.md` |
 | `cv_claims` | id, cv_version_id, section, text, source_fact_ids, job_requirement_ids, validation_status, validation_reason | Every material claim is supported by confirmed facts or explicitly rejected/unresolved |
-| `applications` | id, user_id, job_id, cv_version_id, status, target_kind, approval_id, submitted_at | Exact CV and input snapshot are mandatory before submit |
-| `application_answers` | id, application_id, question_key, question_text, answer_value, source_fact_ids, confirmed_by_user | No guessed answer; unknown remains unresolved |
-| `application_events` | id, application_id, event_type, actor, metadata_json, occurred_at | Append-only audit timeline |
-| `approval_records` | id, application_id, reviewed_payload_hash, approved_by, approved_at, expires_at, revoked_at | Approval binds to exact review package |
+| `applications` (5C) | id, user_id, job_id, connector_id, source_job_id, status (`open`/`skipped` only, check constraint), target_kind (`link_out`), current_package_id, candidate_answers_json, skip_reason, created_at, updated_at | Unique `(user_id, job_id)`; no stored submitted state exists in 5C; displayed state is derived on read |
+| `application_packages` (5C) | id, application_id, revision, review_hash, package_json, job_snapshot_id, match_run_id, cv_version_id, profile_version_id, preference_version_id, connector_id, superseded_at, superseded_reason, created_at | Immutable; unique `(application_id, revision)`; `review_hash` is the SHA-256 of canonical `package_json`, including every answer with its provenance and source fact IDs |
+| `application_answers` (planned) | id, application_id, question_key, question_text, answer_value, source_fact_ids, confirmed_by_user | Not a separate table in 5C: answers live inside the hashed `application_packages.package_json`, and candidate-entered values in `applications.candidate_answers_json`. No guessed answer; unknown remains unresolved |
+| `application_events` (5C) | id, application_id, event_type, actor, metadata_json, occurred_at | Append-only timeline; metadata holds keys, hashes, revisions, and IDs, never answer values |
+| `approval_records` (5C) | id, application_id, package_id, reviewed_payload_hash, approved_by_user_id, approved_at, expires_at, revoked_at, revoked_reason | Approval binds to one package revision and its hash; it is active only while unexpired, unrevoked, current, and the live binding check passes |
 | `external_accounts` | id, user_id, provider, authorization_type, secret_ref, scopes, status | Store only a vault reference; never a password/cookie in DB |
 | `tasks` | id, kind, idempotency_key, payload_ref, state, lease, attempts, next_run_at | Unique idempotency key prevents duplicate work |
 | `audit_events` | id, user_id, actor, action, object_type/id, metadata_json, request_id, occurred_at | Redacted and append-only |

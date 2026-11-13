@@ -52,4 +52,13 @@ h3 { margin-bottom: .35rem; }
 .match-summary ul { color: #63777c; margin: .5rem 0 0; padding-left: 1.2rem; }
 .notice { border-radius: 10px; margin-bottom: 1rem; padding: .75rem 1rem; }
 @media (max-width: 700px) { .topbar, .job-card { align-items: flex-start; flex-direction: column; } .account, .inline-form { align-items: stretch; flex-direction: column; width: 100%; } .job-meta { align-items: flex-start; } }
+.notice.info { background: #eef6f3; color: #23443f; }
+.notice.error { background: #fbeceb; }
+.answer-list { display: grid; gap: .5rem; margin-bottom: 1rem; }
+.answer-row { align-items: center; border: 1px solid #e1e9e9; border-radius: 10px; display: flex; gap: 1rem; justify-content: space-between; padding: .7rem .85rem; }
+.answer-row.unresolved { background: #fdf6f5; border-color: #e2b4b0; }
+.answer-edit { align-items: center; display: flex; gap: .45rem; min-width: 280px; }
+a.secondary { border: 1px solid #b7c7c8; border-radius: 10px; color: #23443f; font-weight: 700; padding: .55rem .8rem; text-decoration: none; }
+code { font-size: .78rem; overflow-wrap: anywhere; }
+@media (max-width: 700px) { .answer-row { align-items: stretch; flex-direction: column; } .answer-edit { min-width: 0; } }
 @media (max-width: 700px) { .fact-row { grid-template-columns: 1fr; } }

@@ -1,6 +1,6 @@
 # Phased implementation roadmap
 
-Status: Phase 5B (one authorized read-only live provider, Ashby) implemented on top of Phase 5A (live integration security foundation) and Phase 4 (job discovery and source integration foundation), which was implemented and readiness-hardened in the local/fixture scope, validated on PostgreSQL 17 and SQLite; dates are intentionally not fixed.
+Status: Phase 5C (application review package, no submission) implemented on top of Phase 5B (one authorized read-only live provider, Ashby), Phase 5A (live integration security foundation) and Phase 4 (job discovery and source integration foundation), which was implemented and readiness-hardened in the local/fixture scope, validated on PostgreSQL 17 and SQLite; dates are intentionally not fixed.
 
 ## Decision record: phase re-sequencing (2026-09-29)
 
@@ -93,7 +93,22 @@ Phase 5 is delivered in steps:
 
 - **5A (implemented).** Live-integration security foundation: egress allowlist, SSRF/DNS-rebinding protection, redirect and size/time limits, credential references and redaction, scheduler foundation, health monitoring, and live-activity audit. No live provider is connected.
 - **5B (implemented).** One authorized read-only provider: Ashby's public Job Posting API, board `Ashby`, product-owner approval 2026-09-30. Validated with a live read-only smoke test.
-- **5C.** Application review package (no submission).
+- **5C (implemented).** Application review package (no submission). Product-owner approval 2026-10-03. Design: `docs/application-agent.md`, "Phase 5C: review package implementation".
+
+### Decision record: Phase 5C scope (2026-10-03)
+
+The product owner approved Phase 5C with this scope:
+
+- **In scope:**
+  - build an immutable, hashed review package for one job, binding the exact snapshot, match run, CV version, profile and preference versions, and source policy;
+  - a fixed question set filled only from confirmed facts or candidate entry;
+  - a live binding check on every read;
+  - candidate approve, revoke, and skip actions with a 24-hour approval expiry;
+  - link-out to the posting URL, which the candidate opens themselves;
+  - an append-only event timeline;
+  - export and deletion coverage.
+- **Out of scope:** any submission, upload, browser runner, destination adapter, form scraping, use of Ashby `applyUrl`, model-generated answers, and EEO/demographic or attestation questions.
+- **Stored-data change:** new tables `applications`, `application_packages`, `approval_records`, and `application_events` (migration `0009_application_review_package`). Packages contain contact and authorization answers. They are highly sensitive and are deleted with the profile.
 
 Remaining prerequisites before `SOURCE_NETWORK_ACCESS_ENABLED` may be turned on in any deployed environment (the 2026-09-30 smoke test enabled it only in a single disposable process):
 
@@ -170,4 +185,4 @@ Pre-Phase-4 snapshots are versioned as `legacy-v0`. Their first Phase 4 ingestio
 
 ## Recommended next implementation phase
 
-Phase 5B is implemented: the read-only Ashby public Job Posting API is registered as the only live provider, covered by sanitized contract fixtures, and validated by a live read-only smoke test (see `docs/testing.md`). Live access stays disabled by default. The remaining deployment prerequisites above must be met before network access is turned on in any deployed environment. The next step is Phase 5C, the application review package (no submission). It needs a new product-owner approval before work starts. Do not add further live providers or implement application submission or browser automation in Phase 5.
+Phase 5B is implemented: the read-only Ashby public Job Posting API is registered as the only live provider, covered by sanitized contract fixtures, and validated by a live read-only smoke test (see `docs/testing.md`). Live access stays disabled by default. The remaining deployment prerequisites above must be met before network access is turned on in any deployed environment. Phase 5C is implemented: an immutable, hashed review package per job with a live binding check, candidate approval (24-hour expiry), and a link-out destination. Nothing is sent. Evidence is in `docs/testing.md`. The next step is Phase 6, one permitted application destination (submission adapter). It needs its own written authorization for a specific destination and a new product-owner approval before work starts. Do not add further live providers or implement application submission or browser automation without that approval.

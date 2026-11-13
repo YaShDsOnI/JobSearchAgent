@@ -1,6 +1,6 @@
 # Application agent and human-in-the-loop flow
 
-Status: design baseline; application submission is not implemented or authorized in this phase.
+Status: Phase 5C implements the application review package only (see "Phase 5C: review package implementation" below). Application submission, browser runners, and destination adapters are not implemented or authorized.
 
 ## Scope boundary
 
@@ -75,3 +75,108 @@ Before starting, check source/job identity, application history, destination, an
 - Approval expires when any bound input changes.
 - All sent fields and artifacts are reconstructible from an application event timeline.
 - A candidate can cancel before final submission and revoke a pending approval.
+
+## Phase 5C: review package implementation
+
+Product-owner approval: 2026-10-03. Scope: build, show, and approve a review package for one job. Nothing is sent anywhere. Implementation: `backend/app/services/applications.py`, `backend/app/api/routes/applications.py`.
+
+### What 5C does not do
+
+- No endpoint, worker, task kind, or adapter sends, uploads, or submits anything to an employer or ATS.
+- The application service imports no HTTP, socket, or browser library. Tests enforce this with a static check.
+- The only destination tier is **link-out**. The package shows the posting's `canonical_url`. The candidate opens it in their own browser and completes any form themselves. The backend never fetches that URL. For Ashby, `applyUrl` is still not collected.
+- A 5C approval is a recorded review decision. Nothing consumes it. Phase 6 will add the submission adapter, and it must re-verify the approval and the binding before acting.
+
+### Stored state
+
+- `applications.status` stores only what the candidate decided: `open` or `skipped`. There is no stored `submitted` state, and a database check constraint rejects any other value.
+- The state shown to the candidate is **derived on every read** from the current package, its live binding check, and its approval. It is never cached:
+
+| Shown state | Condition |
+|---|---|
+| `skipped` | The candidate skipped the job |
+| `review_package_stale` | A bound input changed after the package was built (see "Binding check") |
+| `review_package_ready` | The package is current; it may still have unresolved required answers |
+| `approved` | The package is current, has no unresolved required answers, and has an active approval |
+
+Approval states: `active`, `expired` (24 hours after approval), `revoked` (by the candidate, by skipping, or by a rebuild), and `invalidated` (the binding drifted). An approval is never treated as active unless all of these hold: its package is the current package, the stored review hash matches the recomputed hash, the live binding check passes, and it is neither expired nor revoked.
+
+### Package contents and hash
+
+Each package revision is immutable (`application_packages`, unique per application and revision number). Its canonical JSON (`review-package-v1`) contains:
+
+- **Job:** job ID, connector ID, source job ID, snapshot ID, version, content and raw hashes, retrieval time, employer, title, location, work mode, and lifecycle status.
+- **Source policy:** connector name, kind, policy status, enabled flag, authorization basis, terms version, and the provider version from snapshot provenance.
+- **Inputs:** profile version and preference version.
+- **Match:** match run ID, policy and extractor versions, and the eligibility, fit, and preference results. These are kept as three separate breakdowns.
+- **CV:** CV version ID, content hash, generator and template versions, and the SHA-256 of the PDF and DOCX artifacts.
+- **Answers:** one entry per question, with status, value, provenance, and source fact IDs.
+- **Unresolved items and warnings.**
+- **Destination:** `link_out`, URL, and host.
+- **Data-sharing notice:** its version and text.
+
+`review_hash` is the SHA-256 of that canonical JSON. Approval requires the client to send the hash it displayed, so a candidate cannot approve a package they did not see. Building again from identical inputs reuses the current revision, which makes the operation idempotent.
+
+### Preconditions for building a package
+
+- The job is visible to the candidate and its posting is `active`.
+- Its source connector still exists, is enabled, and is `approved`.
+- The candidate names a CV version that is theirs, belongs to this job, and is `approved`.
+- The CV's match run is `eligible`.
+- The CV's profile version is the candidate's current profile version.
+- The match's preference version is the candidate's current preference version.
+- If the CV was drafted from an older snapshot, no material job field may have changed since (same rule as CV supersession).
+
+Any failure refuses the build with a specific error. Nothing is guessed or defaulted.
+
+### Binding check (verify on every read and before approval)
+
+The package is stale when any of the following differ from what was bound:
+
+- the job's latest snapshot;
+- the posting is no longer `active`;
+- the connector is missing, disabled, not approved, or its authorization basis or terms version changed;
+- the CV is no longer `approved`;
+- the current profile version;
+- the current preference version;
+- another open application exists for a posting linked to this one as a cross-source duplicate (`duplicate_suspected`; stop and ask);
+- the stored package no longer reproduces its review hash (integrity failure).
+
+Approval is refused while the package is stale. A stale package is replaced by building again.
+
+### Question set `standard-questions-v1`
+
+There is no destination form schema in 5C, because the authorized source does not expose application forms. The package uses a fixed, reviewed, destination-agnostic question set. Answers come **only** from confirmed profile facts or from values the candidate types into this package (`candidate_entered`). Preferences are never used as answers: a matching preference such as a minimum salary is not an answer to an employer.
+
+| Key | Required | Filled from |
+|---|---|---|
+| `full_name` | yes | confirmed `contact` fact: `full_name` (or `name`) |
+| `email` | yes | confirmed `contact` fact: `email` |
+| `phone` | no | confirmed `contact` fact: `phone` |
+| `current_location` | no | confirmed `contact` fact: `location` |
+| `work_authorization` | yes | confirmed `work_authorization` facts covering the job country (see below) |
+| `sponsorship_required` | yes | the `sponsorship_needed` field of confirmed `work_authorization` facts covering the job country |
+| `notice_period` | no | confirmed `availability` fact: `notice_period_days` or `notice_period` |
+| `relocation` | no | confirmed `relocation` fact: `willing` (boolean) |
+| `salary_expectation` | no | candidate-entered only |
+
+Rules:
+
+- **Job country.** It is the posting's `location_country`, else its single permitted country. No country, or several permitted countries, leaves both authorization questions unresolved (`job_geography_unknown` or `job_geography_ambiguous`). This holds even though the match is eligible.
+- **Authorization statuses.** Only `authorized`, `citizen`, `permanent_resident`, and `work_permit` answer `yes`. `denied`, `not_authorized`, and `unauthorized` answer `no`. A fact whose countries do not include the job country says nothing about it, and unknown is never `no`.
+- **No confirmed fact.** An answer is `unresolved` (`no_confirmed_fact`). When the fact exists but is unconfirmed, the reason is `fact_unconfirmed`. Confirmed facts that disagree give `conflicting_facts`.
+- **Blocking.** A required question that is unanswered blocks approval. An optional question that is unanswered is shown as `left_blank` and does not block.
+- **Candidate entry.** The candidate may type an answer for any question. A typed answer takes precedence and is labeled `candidate_entered`. Yes/no questions accept only `yes`/`no`; text is limited to 500 characters with no control characters. Every change builds a new package revision, which revokes any earlier approval.
+- **Never asked.** Demographic/EEO questions, legal attestations, e-signatures, and free-text screening questions are not part of the set.
+
+CV gaps recorded on the CV (`unresolved` in its manifest) are shown as non-blocking warnings. The candidate already reviewed them when approving the CV.
+
+### Audit and timeline
+
+`application_events` is an append-only timeline: `package_built`, `answer_updated`, `approved`, `approval_revoked`, `skipped`, `reopened`. Audit events mirror it. Neither ever contains answer values, CV text, or contact details. They hold question keys, hashes, revision numbers, and IDs only.
+
+### Data lifecycle
+
+- `DELETE /profile` deletes the candidate's applications, packages, approvals, and events, because packages embed profile-derived answers.
+- Deleting a private source deletes applications for its postings.
+- `GET /profile/export` includes applications with their package revisions.

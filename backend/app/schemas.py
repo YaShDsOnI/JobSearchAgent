@@ -354,3 +354,110 @@ class DataRequestResponse(StrictModel):
     status: str
     requested_at: datetime
     completed_at: datetime | None
+
+
+ApplicationStatus = Literal["review_package_ready", "approved", "review_package_stale", "skipped"]
+ApprovalState = Literal["active", "expired", "revoked", "invalidated"]
+
+
+class ApplicationPrepare(StrictModel):
+    cv_version_id: str = Field(min_length=1, max_length=36)
+
+
+class ApplicationAnswerUpdate(StrictModel):
+    # null clears a candidate-entered answer; the service enforces the 500-character limit.
+    value: str | None = Field(default=None, max_length=2_000)
+
+
+class ApplicationApprove(StrictModel):
+    review_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class ApplicationSkip(StrictModel):
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class ApplicationAnswerResponse(StrictModel):
+    question_key: str
+    question_text: str
+    kind: Literal["text", "email", "yes_no"]
+    required: bool
+    status: Literal["answered", "unresolved", "left_blank"]
+    value: str | None
+    provenance: Literal["profile_fact", "candidate_entered"] | None
+    source_fact_ids: list[str]
+    reason: str | None
+
+
+class ApplicationPackageResponse(StrictModel):
+    id: str
+    revision: int
+    review_hash: str
+    job_snapshot_id: str
+    match_run_id: str
+    cv_version_id: str
+    profile_version_id: str
+    preference_version_id: str | None
+    created_at: datetime
+    answers: list[ApplicationAnswerResponse]
+    unresolved: list[dict[str, Any]]
+    warnings: list[dict[str, Any]]
+    destination: dict[str, Any] | None
+    content: dict[str, Any]
+
+
+class ApplicationDrift(StrictModel):
+    code: str
+    message: str
+
+
+class ApplicationBinding(StrictModel):
+    state: Literal["current", "stale"]
+    drift: list[ApplicationDrift]
+
+
+class ApprovalResponse(StrictModel):
+    id: str
+    package_id: str
+    reviewed_payload_hash: str
+    state: ApprovalState
+    approved_at: datetime
+    expires_at: datetime
+    revoked_at: datetime | None
+    revoked_reason: str | None
+
+
+class ApplicationEventResponse(StrictModel):
+    id: str
+    event_type: str
+    actor: str
+    metadata: dict[str, Any]
+    occurred_at: datetime
+
+
+class ApplicationResponse(StrictModel):
+    id: str
+    job_id: str
+    status: ApplicationStatus
+    decision: Literal["open", "skipped"]
+    target_kind: Literal["link_out"]
+    skip_reason: str | None
+    can_approve: bool
+    package: ApplicationPackageResponse | None
+    binding: ApplicationBinding
+    approval: ApprovalResponse | None
+    events: list[ApplicationEventResponse]
+    submission_available: Literal[False] = False
+    created_at: datetime
+    updated_at: datetime
+
+
+class ApplicationSummaryResponse(StrictModel):
+    id: str
+    job_id: str
+    title: str | None
+    employer: str | None
+    status: ApplicationStatus
+    revision: int | None
+    unresolved_count: int
+    updated_at: datetime
