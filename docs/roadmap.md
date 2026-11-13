@@ -151,6 +151,16 @@ Acceptance criteria:
 
 Implement one provider-approved API or narrowly scoped application adapter using a sandbox/dummy site, with per-application approval, idempotency, pause states, exact artifact binding, and verification. Link-out is the fallback.
 
+### Decision record: Phase 6 approval (2026-11-13)
+
+The product owner approved Phase 6 on 2026-11-13 with these choices:
+
+- **Destination: a local sandbox ATS only.** The adapter is built and tested against a dummy ATS that runs locally. No real employer or ATS receives anything. Adding a real destination needs that destination's written authorization (basis, terms, fields sent, rate limits, failure modes) and a new decision record.
+- **Mechanism: browser automation** (Playwright) in an isolated runner, following "Browser runner rules" in `docs/application-agent.md`. CAPTCHA, MFA, anti-bot challenges, and unknown fields pause and are never bypassed.
+- **First deliverable: the application tracker** (`docs/application-agent.md`, "Application tracker"), requested by the product owner the same day. It records where the candidate has applied: link-out applications they report themselves after reviewing a package, applications made outside the app, and later the sandbox adapter's verified submissions. It sends nothing.
+
+Stored-data change for the tracker: new table `tracked_applications` (migration `0010_application_tracker`). It holds company, role, link, date, stage, and the candidate's notes, so it is personal data: it is exported with the profile and deleted with it.
+
 Acceptance criteria:
 
 - No submission can occur without a live approval matching the review hash.

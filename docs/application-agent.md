@@ -180,3 +180,45 @@ CV gaps recorded on the CV (`unresolved` in its manifest) are shown as non-block
 - `DELETE /profile` deletes the candidate's applications, packages, approvals, and events, because packages embed profile-derived answers.
 - Deleting a private source deletes applications for its postings.
 - `GET /profile/export` includes applications with their package revisions.
+
+## Application tracker (Phase 6, 2026-11-13)
+
+Decision record: `docs/roadmap.md`, "Decision record: Phase 6 approval (2026-11-13)". The tracker answers "where have I applied, for which roles, at which companies". It records what the candidate did. It never sends, uploads, or fetches anything. Implementation: `backend/app/services/tracker.py`, `backend/app/api/routes/tracker.py`.
+
+### Entries
+
+Each entry in `tracked_applications` has a company, role, optional location and link, the date applied, a stage, optional notes, and a channel:
+
+| Channel | Created by | What is bound |
+|---|---|---|
+| `link_out` | `POST /applications/{id}/applied` after the candidate applied on the employer's site themselves | The application, and the package revision and `review_hash` current at that moment. Company, role, location, and link are copied from that package. |
+| `external` | `POST /tracker` for an application made outside JobFinderAgent | Nothing; every field is entered by the candidate |
+| `sandbox_adapter` | Reserved for the Phase 6 sandbox adapter's verified submissions | Added with the adapter |
+
+`link_out` entries are candidate-reported. The design allows candidate-supplied evidence as verification (see "Verification and duplicate protection"). The UI labels them "you applied on the employer's site". The bound package records what was *prepared* for that job. JobFinderAgent cannot see what the candidate actually entered on the employer's site, and does not claim to.
+
+Stages: `applied`, `interviewing`, `offer`, `accepted`, `rejected`, `withdrawn`. The candidate sets them; nothing infers them.
+
+### Rules
+
+- **Marking an application applied** needs an application the candidate owns that is not skipped and has a current package. A stale package may be marked, because the candidate may have applied before the job changed. The entry binds the revision that was current, and `application_events` gets `marked_applied`.
+- **Once applied, the package is frozen.** Rebuild, answer edits, approval, and skip are refused with `already_applied`, so the bound revision stays the record of what was prepared. Revoking an existing approval is still allowed. Deleting the tracker entry (`unmarked_applied` event) unfreezes it.
+- **Duplicates.** One entry per application (unique). A manual entry whose company and role match an existing entry (case- and whitespace-insensitive), or whose link matches one, is refused with `possible_duplicate` and the existing entry's ID, unless the request sets `allow_duplicate`. This follows "On ambiguous duplicate, stop and ask".
+- **Validation.** Company and role: 1 to 255 characters with no control characters. Link: optional, `http`/`https` only, at most 2048 characters, no embedded credentials. It is stored as data and never fetched by the backend. Date: from 2000-01-01 to today in the candidate's time zone (the server accepts up to one day after the current UTC date to allow for time zones ahead of UTC). Defaults to today. Notes: at most 2000 characters.
+- **Shown state.** An application with a tracker entry shows `applied`.
+
+### API
+
+- `GET /tracker`: the candidate's entries, newest application date first, plus a summary (total, distinct companies, count per stage). Optional filters: `stage` and `q` (company or role substring).
+- `POST /tracker`: a manual (`external`) entry.
+- `POST /applications/{id}/applied`: mark an in-app application applied (`link_out`), with an optional date and notes.
+- `PATCH /tracker/{id}`: change the stage, notes, or date. Company, role, location, and link can be edited on `external` entries only, because `link_out` entries mirror their bound package.
+- `DELETE /tracker/{id}`: remove an entry (for example, marked by mistake).
+
+All write routes need the CSRF header. Every query is scoped to the signed-in candidate.
+
+### Audit and privacy
+
+- Audit actions are `tracker.created`, `tracker.updated`, and `tracker.deleted`, with the entry ID, channel, stage, and changed field names only. They never contain the company, role, link, or notes, because the set of companies someone applies to is sensitive.
+- `GET /profile/export` includes every entry. `DELETE /profile` deletes them. Deleting a private source keeps the candidate's tracker entries but unlinks them from the deleted application, because they are the candidate's own history.
+

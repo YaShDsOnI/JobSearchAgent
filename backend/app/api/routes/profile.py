@@ -36,6 +36,7 @@ from app.services.applications import delete_applications, export_applications
 from app.services.audit import record_audit
 from app.services.cv_invalidation import supersede_cv_versions
 from app.services.storage import ArtifactStorage
+from app.services.tracker import delete_all_entries, export_entries
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 
@@ -335,6 +336,7 @@ def export_profile(user: User = Depends(get_current_user), db: Session = Depends
             ConsentResponse.model_validate(item).model_dump(mode="json") for item in consents
         ],
         "applications": export_applications(db, user.id),
+        "tracked_applications": export_entries(db, user.id),
         "cv_versions": [
             {
                 "id": version.id,
@@ -375,6 +377,8 @@ def delete_profile(
 ):
     require_csrf(request)
     storage = artifact_storage()
+    # The tracker records where the candidate applied: personal data, deleted with the profile.
+    tracker_count = delete_all_entries(db, user.id)
     # Packages embed profile-derived answers and reference CVs: delete them first.
     application_count = delete_applications(
         db,
@@ -430,7 +434,11 @@ def delete_profile(
         user_id=user.id,
         object_type="data_request",
         object_id=data_request.id,
-        metadata={"artifact_count": len(artifacts), "application_count": application_count},
+        metadata={
+            "artifact_count": len(artifacts),
+            "application_count": application_count,
+            "tracker_count": tracker_count,
+        },
         request_id=request.state.request_id,
     )
     db.commit()

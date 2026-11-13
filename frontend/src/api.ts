@@ -181,7 +181,7 @@ export type ApplicationPackage = {
 export type Application = {
   id: string;
   job_id: string;
-  status: "review_package_ready" | "approved" | "review_package_stale" | "skipped";
+  status: "review_package_ready" | "approved" | "review_package_stale" | "skipped" | "applied";
   decision: "open" | "skipped";
   target_kind: "link_out";
   skip_reason: string | null;
@@ -194,6 +194,37 @@ export type Application = {
   created_at: string;
   updated_at: string;
 };
+
+export const TRACKER_STAGES = ["applied", "interviewing", "offer", "accepted", "rejected", "withdrawn"] as const;
+export type TrackerStage = (typeof TRACKER_STAGES)[number];
+
+export type TrackerEntry = {
+  id: string;
+  application_id: string | null;
+  package_id: string | null;
+  review_hash: string | null;
+  channel: "link_out" | "external" | "sandbox_adapter";
+  company: string;
+  role_title: string;
+  location: string | null;
+  job_url: string | null;
+  applied_on: string;
+  stage: TrackerStage;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TrackerList = {
+  entries: TrackerEntry[];
+  summary: { total: number; companies: number; by_stage: Record<TrackerStage, number> };
+};
+
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number, readonly code?: string, readonly existingId?: string) {
+    super(message);
+  }
+}
 
 function csrfToken(): string {
   return document.cookie
@@ -212,8 +243,9 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(path, { ...init, headers, credentials: "include" });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    const detail = typeof body.detail === "object" && body.detail !== null ? body.detail.message : body.detail;
-    throw new Error(detail ?? body.message ?? `Request failed (${response.status})`);
+    const structured = typeof body.detail === "object" && body.detail !== null && !Array.isArray(body.detail);
+    const detail = structured ? body.detail.message : Array.isArray(body.detail) ? "Please check the highlighted fields." : body.detail;
+    throw new ApiError(detail ?? body.message ?? `Request failed (${response.status})`, response.status, structured ? body.detail.code : undefined, structured ? body.detail.existing_id : undefined);
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
