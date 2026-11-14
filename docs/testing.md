@@ -218,6 +218,22 @@ Manual browser check (2026-11-13, Chrome on Windows, throwaway database, sandbox
 - The tracker showed a "Sandbox submission" entry.
 - There were no console errors. The check found two wording fixes: the applied notice for adapter submissions, and the dashboard intro.
 
+### Phase 7 backup and restore tests
+
+`tests/test_phase7_backup.py` restores into the suite's own database after wiping it, so the tests run on SQLite and, in the `test-postgres` stage, on a PostgreSQL schema built by the migrations, where foreign keys are enforced.
+
+- **Round trip.** A candidate with a CV (PDF and DOCX), job snapshots, a tracker entry, and a self-referencing job posting is backed up and restored. Every table's row digest matches the original, and every blob decrypts to the original plaintext.
+- **No plaintext personal data on disk.** The email, a tracker note, and CV text appear in neither `manifest.json` nor `database.enc`.
+- **Tampering.** An edited manifest, a flipped byte in the dump or in a blob, a missing blob, a wrong backup key, and a wrong artifact key are each refused. Without the artifact key, verification checks file hashes only and says so.
+- **Refusals.** Restore refuses a non-empty database, a non-empty artifact store, and a different schema revision. A read-back mismatch rolls back and removes the copied blobs. A missing blob fails the backup and leaves no directory.
+- **Deletion replay.** The candidate is backed up, deletes their profile, and the deployment is restored from the older backup. Replay removes their CVs, tracker entries, and owned blobs, and records `profile.deletion_replayed`. A second replay changes nothing. When the candidate starts again after a deletion, their new data stays.
+- **Ledger.** A tampered entry fails its MAC. Updating the ledger from a database that no longer remembers a deletion keeps the entry.
+- **Retention.** `prune` removes backups past the cutoff and always keeps the newest one. It ignores directories it did not create and refuses a retention below one day.
+- **CLI.** `create --ledger`, `verify`, and `restore` work. Restore into a live database is refused, `--skip-deletion-replay` without `--reason` is refused, and audit events record backup IDs only.
+- **Key rules.** The backup key must decode to 32 bytes and differ from the artifact key.
+
+The restore drill in a deployed environment (`docs/runbooks.md`, "Restore drill") is manual. It has not been run yet.
+
 ### Running against PostgreSQL
 
 The suite defaults to in-memory SQLite. Set `TEST_DATABASE_URL` to a **disposable** PostgreSQL database, for example `postgresql+psycopg://<user>:<password>@127.0.0.1:<port>/<db>`. In that mode the test run:

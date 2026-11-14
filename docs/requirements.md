@@ -141,6 +141,6 @@ Initial candidates for validation are public job feeds from Greenhouse, Lever, a
 - Is this a personal tool for one candidate or a product for multiple candidates? Who is the data fiduciary/controller and who are processors?
 - Which exact sources have permission for machine access and, separately, application submission?
 - Which model providers may receive CVs and job text, in which regions, with what retention/training settings?
-- What candidate-level retention, deletion, export, and backup policy is acceptable?
+- What candidate-level retention, deletion, export, and backup policy is acceptable? (Phase 7 implements 35-day backup retention with deletion replay after restore; legal review must still confirm it.)
 - Will applications be link-out only, API-based, or browser-assisted for the beta? Which ATS test environments are available?
 - Does the product need cover letters, recruiter messages, demographic questions, or only CV and basic application fields? The default is to exclude these until separately approved.

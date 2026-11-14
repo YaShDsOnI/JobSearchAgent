@@ -21,6 +21,10 @@ class Settings(BaseSettings):
         default="./data/artifacts", validation_alias="ARTIFACT_STORAGE_PATH"
     )
     artifact_encryption_key: str = Field(default="", validation_alias="ARTIFACT_ENCRYPTION_KEY")
+    # Encrypts backup database dumps (`python -m app.backup`). Read only by the backup CLI,
+    # never by the API or workers. It must differ from ARTIFACT_ENCRYPTION_KEY and is kept
+    # apart from the backups themselves (see docs/runbooks.md, "Backup").
+    backup_encryption_key: str = Field(default="", validation_alias="BACKUP_ENCRYPTION_KEY")
     max_upload_bytes: int = Field(default=5_000_000, gt=0, validation_alias="MAX_UPLOAD_BYTES")
     log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
     # Global egress gate for source providers that need network access. It stays false

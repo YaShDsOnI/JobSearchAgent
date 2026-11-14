@@ -12,14 +12,27 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from app.core.config import Settings
 
 
+def decode_artifact_key(value: str) -> bytes:
+    try:
+        key = base64.urlsafe_b64decode(value.encode("ascii"))
+    except (ValueError, UnicodeEncodeError) as exc:
+        raise RuntimeError("ARTIFACT_ENCRYPTION_KEY must be URL-safe base64") from exc
+    if len(key) not in {16, 24, 32}:
+        raise RuntimeError("ARTIFACT_ENCRYPTION_KEY must decode to 16, 24, or 32 bytes")
+    return key
+
+
+def decrypt_blob(key: bytes, object_key: str, encrypted: bytes) -> bytes:
+    """Decrypt a stored blob (`nonce || AES-GCM ciphertext`, bound to its artifact ID)."""
+    if len(encrypted) < 13:
+        raise ValueError("Stored artifact is truncated")
+    artifact_id = Path(object_key).stem
+    return AESGCM(key).decrypt(encrypted[:12], encrypted[12:], artifact_id.encode("utf-8"))
+
+
 class ArtifactStorage:
     def __init__(self, settings: Settings):
-        try:
-            key = base64.urlsafe_b64decode(settings.artifact_encryption_key.encode("ascii"))
-        except (ValueError, UnicodeEncodeError) as exc:
-            raise RuntimeError("ARTIFACT_ENCRYPTION_KEY must be URL-safe base64") from exc
-        if len(key) not in {16, 24, 32}:
-            raise RuntimeError("ARTIFACT_ENCRYPTION_KEY must decode to 16, 24, or 32 bytes")
+        key = decode_artifact_key(settings.artifact_encryption_key)
         self.root = Path(settings.artifact_storage_path)
         self.root.mkdir(parents=True, exist_ok=True)
         self._root_resolved = self.root.resolve()
@@ -56,13 +69,7 @@ class ArtifactStorage:
             raise ValueError("Artifact object key escapes configured storage root")
         if not path.is_file():
             raise FileNotFoundError(object_key)
-        encrypted = path.read_bytes()
-        if len(encrypted) < 13:
-            raise ValueError("Stored artifact is truncated")
-        artifact_id = Path(object_key).stem
-        return AESGCM(self._key).decrypt(
-            encrypted[:12], encrypted[12:], artifact_id.encode("utf-8")
-        )
+        return decrypt_blob(self._key, object_key, path.read_bytes())
 
     def iter_objects(self) -> Iterator[tuple[str, datetime]]:
         """Yield (object_key, modified_at) for every stored blob under the root."""
