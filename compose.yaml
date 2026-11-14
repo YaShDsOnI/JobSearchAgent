@@ -105,6 +105,29 @@ services:
       EGRESS_CLIENT_CIDR: ${BACKEND_SUBNET:-10.250.0.0/24}
     networks: [backend, egress]
 
+  # Backups (docs/runbooks.md, "Backup and restore"):
+  #   docker compose --profile ops run --rm backup create --out-root /backups \
+  #     --ledger /backups/deletion-ledger.json
+  # The only container that receives BACKUP_ENCRYPTION_KEY. It has no route out; copying
+  # backups off the host is a separate, approved step.
+  backup:
+    profiles: ["ops"]
+    build: ./backend
+    image: jobfinderagent-backend:local
+    entrypoint: ["python", "-m", "app.backup"]
+    command: ["--help"]
+    environment:
+      <<: *backend-env
+      BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY:-}
+    networks: [backend]
+    restart: "no"
+    volumes:
+      - jobfinderagent-artifacts:/data/artifacts
+      - ${BACKUP_HOST_DIR:-./backups}:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 networks:
   backend:
     internal: true  # No route out and no external DNS.

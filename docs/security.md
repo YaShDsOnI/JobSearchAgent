@@ -33,6 +33,8 @@ Phase 6 note (application tracker and sandbox browser adapter, approved 2026-11-
 - The fill manifest holds the values that were sent. It is personal data, exported and deleted with the profile and never placed in audit metadata.
 - The application tracker stores where the candidate applied. Audit events hold IDs, channel, stage, and field names only.
 
+Phase 7 note (backup, restore, and runbooks, 2026-11-14): see "Backups" below and `docs/runbooks.md`.
+
 Phase 5B note: the first live provider is Ashby's anonymous, read-only public Job Posting API.
 
 - It is bound to one exact board path on `api.ashbyhq.com`. Any redirect elsewhere blocks the source.
@@ -69,6 +71,22 @@ Protect candidate identity, CVs, job-search history, authorization answers, appl
 - Record provider, region, retention, subprocessors, training-use settings, and deletion path for every external model/storage service.
 - Use jurisdiction-aware privacy notices and legal review for India's DPDP Act/Rules, GDPR/UK GDPR where applicable, cross-border transfers, and employment-related AI obligations. Do not market the system as “GDPR compliant” based on vendor capabilities.
 - Provide export, correction, withdrawal, deletion, and support/complaint paths appropriate to the applicable law and contract.
+
+### Backups
+
+Implemented in Phase 7 (`python -m app.backup`; operations in `docs/runbooks.md`, "Backup and restore").
+
+- A backup is a full copy of personal data, so it gets the same protection as the primary stores.
+  - The database dump is AES-GCM encrypted under a key derived from `BACKUP_ENCRYPTION_KEY`.
+  - Blobs stay encrypted under `ARTIFACT_ENCRYPTION_KEY`.
+  - The manifest holds no personal data and is MAC'd.
+  - Restore refuses tampered or mismatched files.
+- The backup key is separate from the artifact key, which the CLI enforces. Only the backup CLI and the compose `backup` service receive it. Both keys are stored apart from the backups.
+- Backups are retained for 35 days, and the newest backup is always kept. Off-site copies follow the same retention. Off-site replication is not implemented yet, and its target needs product-owner approval for personal data.
+- Deletion survives restore. Every restore is followed by replay of the deletion ledger, so a backup never brings back data the candidate deleted. The ledger holds only data request IDs, user IDs, and completion times. It is MAC'd with the backup key, because a forged entry would cause a deletion.
+- Restore never merges or overwrites. It accepts only an empty, migrated target, commits only an exact read-back copy, and records a `backup.restored` audit event.
+- CLI output and audit metadata hold IDs, counts, and hashes only.
+- Known gap: there is no artifact key rotation or re-encryption tool yet (`docs/runbooks.md`, "Leaked secret or token").
 
 ## Identity and access
 
@@ -131,4 +149,4 @@ EU legal review is required before offering the service into relevant EU context
 - Secret scanning, dependency scanning, SAST, DAST, and authorization tests pass in CI.
 - A simulated prompt injection cannot cause data access, tool escalation, arbitrary navigation, or submission.
 - An audit proves a deleted user's personal artifacts are removed from primary stores and vendor deletion requests are tracked.
-- Incident runbooks exist for leaked token, unintended submission, source-policy violation, model provider incident, and data export failure.
+- Incident runbooks exist for leaked token, unintended submission, source-policy violation, model provider incident, and data export failure. They are in `docs/runbooks.md` (Phase 7). No incident exercise has been run yet.
