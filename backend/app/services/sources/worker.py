@@ -101,7 +101,27 @@ def process_ingestion_task(
         return None
     complete_task(db, task, worker_id=worker_id)
     db.commit()
+    if not result.replayed and any(
+        result.count(key) for key in ("created", "updated", "reopened")
+    ):
+        _queue_agent_refreshes(db, result.connector_id)
     return result
+
+
+def _queue_agent_refreshes(db: Session, connector_id: str) -> None:
+    """New or changed postings: let the agent re-match every candidate who can see them.
+    A failure here never fails the finished ingestion."""
+    from app.db.models import SourceConnector
+    from app.services.agent import enqueue_for_catalog_change
+
+    try:
+        connector = db.get(SourceConnector, connector_id)
+        if connector is not None:
+            enqueue_for_catalog_change(db, connector)
+            db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.error("Could not queue agent refreshes", extra={"error_type": type(exc).__name__})
 
 
 def run_next_ingestion_task(

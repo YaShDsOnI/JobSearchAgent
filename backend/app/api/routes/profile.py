@@ -28,6 +28,7 @@ from app.schemas import (
     ProfileVersionCreate,
     ProfileVersionResponse,
 )
+from app.services.agent import AUTO_MATCH_PURPOSE, enqueue_match_refresh
 from app.services.applications import export_applications
 from app.services.audit import record_audit
 from app.services.cv_invalidation import supersede_cv_versions
@@ -186,6 +187,8 @@ def create_profile_version(
         request_id=request.state.request_id,
     )
     db.commit()
+    enqueue_match_refresh(db, user.id, reason="profile_changed")
+    db.commit()
     db.refresh(version)
     return version
 
@@ -230,6 +233,8 @@ def update_preferences(
         request_id=request.state.request_id,
     )
     db.commit()
+    enqueue_match_refresh(db, user.id, reason="preferences_changed")
+    db.commit()
     db.refresh(preference)
     return PreferencesResponse(
         id=preference.id,
@@ -271,6 +276,9 @@ def grant_consent(
         request_id=request.state.request_id,
     )
     db.commit()
+    if consent.purpose == AUTO_MATCH_PURPOSE:
+        enqueue_match_refresh(db, user.id, reason="agent_enabled")
+        db.commit()
     db.refresh(consent)
     return consent
 

@@ -65,6 +65,60 @@ class ProfileVersionResponse(StrictModel):
     source_document_id: str | None
 
 
+LocationCategory = Literal[
+    "global_remote", "remote_from_home", "local_remote", "hybrid_home", "onsite_home", "abroad"
+]
+DEFAULT_LOCATION_PRIORITIES: list[LocationCategory] = [
+    "global_remote",
+    "remote_from_home",
+    "local_remote",
+    "hybrid_home",
+    "onsite_home",
+]
+
+
+class LocationPolicy(StrictModel):
+    """The candidate's ordered location ladder (preference only, never eligibility).
+
+    - `global_remote`: remote, open to several countries including the home country, with
+      the employer based elsewhere.
+    - `remote_from_home`: remote, open specifically to the home country, employer elsewhere.
+    - `local_remote`: remote, employer in the home country.
+    - `hybrid_home` / `onsite_home`: in the home country, ranked further by
+      `preferred_cities`.
+    - `abroad`: hybrid or on-site outside the home country (relocation).
+    A category left out of `priorities` scores zero. Work authorization is still decided
+    only by confirmed facts.
+    """
+
+    home_country: str = Field(min_length=2, max_length=2, pattern=r"^[A-Za-z]{2}$")
+    priorities: list[LocationCategory] = Field(
+        default_factory=lambda: list(DEFAULT_LOCATION_PRIORITIES), max_length=6
+    )
+    preferred_cities: list[str] = Field(default_factory=list, max_length=20)
+    open_to_relocation: bool | None = None
+
+    @field_validator("home_country")
+    @classmethod
+    def upper_country(cls, value: str) -> str:
+        return value.upper()
+
+    @field_validator("priorities")
+    @classmethod
+    def unique_priorities(cls, value: list[LocationCategory]) -> list[LocationCategory]:
+        if len(set(value)) != len(value):
+            raise ValueError("priorities must not repeat a category")
+        return value
+
+    @field_validator("preferred_cities")
+    @classmethod
+    def clean_cities(cls, value: list[str]) -> list[str]:
+        cleaned = [item.strip() for item in value if item.strip()]
+        if any(len(item) > 100 for item in cleaned):
+            raise ValueError("city names must be at most 100 characters")
+        return cleaned
+
+
 class Preferences(StrictModel):
     target_roles: list[str] = Field(default_factory=list, max_length=50)
     seniority: list[str] = Field(default_factory=list, max_length=20)
@@ -76,6 +130,7 @@ class Preferences(StrictModel):
     location_preferences: list[str] = Field(default_factory=list, max_length=50)
     work_authorization: dict[str, Any] = Field(default_factory=dict)
     notice_period_days: int | None = Field(default=None, ge=0, le=3650)
+    location_policy: LocationPolicy | None = None
 
 
 class PreferencesResponse(StrictModel):

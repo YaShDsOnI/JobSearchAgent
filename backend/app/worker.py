@@ -1,4 +1,4 @@
-"""Ingestion worker: processes queued source_ingest tasks.
+"""Worker: processes queued source_ingest tasks, then agent_match_refresh tasks.
 
 - `python -m app.worker --once` processes at most one task.
 - `python -m app.worker` processes up to `--max-tasks` and exits when the queue is empty.
@@ -15,6 +15,7 @@ from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.core.shutdown import StopSignal
 from app.db.session import SessionLocal
+from app.services.agent import run_next_agent_task
 from app.services.sources.worker import run_next_ingestion_task
 from app.services.storage import ArtifactStorage
 
@@ -37,14 +38,17 @@ def run_worker(
     processed = 0
     while not stop.stopped and (limit is None or processed < limit):
         with SessionLocal() as db:
+            # Ingestion first: the agent's refreshes depend on the postings it writes.
             task = run_next_ingestion_task(db, storage, worker_id=worker_id)
+            if task is None:
+                task = run_next_agent_task(db, worker_id=worker_id)
             outcome = None if task is None else (task.id, task.state)
         if outcome is None:
             if not loop or stop.wait(max(poll_seconds, MIN_POLL_SECONDS)):
                 break
             continue
         processed += 1
-        logger.info("Processed ingestion task %s state=%s", *outcome)
+        logger.info("Processed task %s state=%s", *outcome)
     return processed
 
 

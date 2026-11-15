@@ -253,6 +253,31 @@ The restore drill in a deployed environment (`docs/runbooks.md`, "Restore drill"
 
 A key rotation in a deployed environment (`docs/runbooks.md`, "Artifact key rotation") is manual. It has not been run yet.
 
+### Agent loop tests
+
+`tests/test_agent_loop.py`:
+
+- **Text extraction.**
+  - Section headings, sentence cues, and "N+ years" are read correctly.
+  - Background and benefits sections stay informational.
+  - Years are not spread across sentences that name many skills.
+  - Every quote is verbatim, and geography is never read from prose.
+  - A job with no identifiable requirement scores a neutral fit with `requirements_unknown`.
+- **Location ladder.**
+  - Each category is scored, including city ranking, an excluded category, relocation refused, and unknown remote geography.
+  - The ladder never changes eligibility.
+  - Repeated categories are refused, and title words and seniority match.
+- **Agent.**
+  - Nothing is queued before the candidate enables the agent.
+  - Once enabled, one background refresh matches every job and records an audit event.
+  - Unchanged inputs queue nothing new, and a profile change marks matches stale and queues a refresh.
+  - After disabling, a queued task does nothing.
+  - A manual refresh works without the agent, is idempotent, and respects its limit.
+  - Ingestion that changed postings queues refreshes only for consenting candidates who can see them.
+  - Recommendations are bucketed and ranked, and ineligible jobs are hidden by default.
+  - A resolved review is carried forward after a preference change and dropped after a profile change.
+  - Next actions guide a new candidate through to "ready".
+
 ### Running against PostgreSQL
 
 The suite defaults to in-memory SQLite. Set `TEST_DATABASE_URL` to a **disposable** PostgreSQL database, for example `postgresql+psycopg://<user>:<password>@127.0.0.1:<port>/<db>`. In that mode the test run:

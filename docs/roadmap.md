@@ -221,6 +221,48 @@ Security and stored-data decisions:
 - A retired key must stay in escrow, but out of the deployment, until every backup taken before the rotation has passed the 35-day retention. Restoring such a backup needs it.
 - Profile deletion now deletes artifact rows before unlinking their blobs, inside the same transaction. A rotation that holds a row lock therefore either finishes first or finds no row, so it can never rewrite a deleted blob.
 
+### Decision record: agent build-out program (2026-11-16)
+
+On 2026-11-16 the product owner gave blanket approval to build out the agent: "Build the agent as you like just keep the original purpose of the agent as it is". They left the design, structure, flow, and the decision to open and merge pull requests to the implementer, and asked not to be asked for further approvals. This record turns that approval into a concrete scope.
+
+The original purpose is unchanged. The agent finds jobs from permitted sources, explains eligibility, fit, and preference separately, drafts truthful tailored CVs, and helps the candidate apply, with the candidate in control.
+
+Approved and delivered in increments, each with its own pull request, tests, and implementation note below:
+
+1. **Agent core.**
+   - Free-text requirement extraction (`rules-v2`).
+   - The original location ladder and matching policy `deterministic-v2`.
+   - Automatic re-matching under an `automatic_matching` consent.
+   - Ranked recommendations and next actions.
+2. **Official read-only sources.** Public Greenhouse Job Board and Lever Postings APIs, behind the existing fail-closed registry. Each board still needs its own authorization record, and live network access stays off by default.
+3. **CV fact suggestions.** Facts proposed from the uploaded CV, each with its evidence. They are stored as `unknown` until the candidate confirms them.
+4. **Candidate workspace.** A multi-view frontend over the existing API.
+5. **Phase 7 remainder.** Candidate-granted, time-boxed support access, aggregate pilot metrics, and off-site backup copies to an operator-chosen target.
+6. **Optional model-assisted job extraction.** Disabled by default and limited to public job text, never candidate data. Every model claim must quote the job text verbatim and is advisory only.
+
+These remain excluded, because no product-owner approval can cover them. Each would break a product invariant (`AGENTS.md`) or needs consent from a third party:
+
+- A real employer or ATS application destination without that destination's own written authorization. The product owner cannot grant permission on an employer's behalf. Link-out and the local sandbox ATS stay the only submission paths.
+- Unattended or batch submission. Every submission still needs the candidate's approval of the exact package and the confirmation of the filled form.
+- Solving or bypassing CAPTCHA, MFA, or anti-bot controls; scraping or logging into job boards that prohibit automation; unofficial APIs; and copied credentials or cookies.
+- Model-generated candidate facts or answers to unknown employer questions, and ranking on protected characteristics.
+- Automatic CV generation, until a labeled evaluation meets its threshold (`docs/matching-engine.md`, "Acceptance criteria").
+
+### Agent core implementation note (2026-11-16)
+
+Implemented under "Decision record: agent build-out program (2026-11-16)", item 1:
+
+- `backend/app/services/skills_taxonomy.py` (`skills-v2`), `backend/app/services/jd_text.py`, and the `rules-v2` extractor in `backend/app/services/requirements.py`.
+- Matching policy `deterministic-v2` in `backend/app/services/matching.py`: a neutral fit when no requirement is known, the location ladder (`location_policy` in preferences), seniority, and title matching by word.
+- `backend/app/services/agent.py` and `backend/app/api/routes/agent.py`:
+  - the `agent_match_refresh` task, run by the existing worker;
+  - triggers on ingestion changes, profile and preference changes, and agent enablement;
+  - `GET /agent/status`, `POST /agent/enable|disable|refresh`, and `GET /recommendations`.
+
+Stored-data change: none in the schema. New consent purpose `automatic_matching`, new task kind `agent_match_refresh`, new audit action `agent.matches_refreshed`. Match runs record `deterministic-v2` and `rules-v2`. Earlier runs keep their versions.
+
+Evidence: `docs/testing.md`, "Agent loop tests".
+
 ## Phase 8 — expansion only by evidence
 
 Add connectors one at a time after policy review, fixtures, terms/authorization, rate limits, observability, and rollback. Consider additional models, vector retrieval, multilingual support, and more ATS adapters only when the simpler design fails a measured need.
@@ -305,7 +347,7 @@ Phase 7 acceptance status:
 
 Phases 1 to 6 are implemented (see the notes above). Live access stays disabled by default, and the only application destination is the local sandbox ATS.
 
-Phase 7 is in progress. Backup and restore with deletion replay, the incident runbooks, and artifact key rotation are implemented. Next:
+The agent build-out program (decision record of 2026-11-16) is in progress; see its implementation notes. Phase 7 is in progress. Backup and restore with deletion replay, the incident runbooks, and artifact key rotation are implemented. Next:
 
 1. Run the restore drill, one key rotation, and one incident exercise in a real deployed environment, and record the results.
 2. Get product-owner approval for the remaining deferred Phase 7 items: support access controls, pilot metrics and cost budgets, and off-site backup replication.

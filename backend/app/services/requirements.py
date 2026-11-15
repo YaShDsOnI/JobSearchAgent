@@ -11,9 +11,13 @@ from app.db.models import (
     JobSnapshot,
     Skill,
 )
+from app.services.jd_text import TEXT_EXTRACTOR_CONFIDENCE, extract_text_requirements
+from app.services.skills_taxonomy import TAXONOMY_VERSION, canonical_name
 
-EXTRACTOR_VERSION = "rules-v1"
-TAXONOMY_VERSION = "skills-v1"
+# rules-v2: structured requirements when the provider supplies them, otherwise skills read
+# from the description text (`app.services.jd_text`). rules-v1 analyses stay as recorded.
+EXTRACTOR_VERSION = "rules-v2"
+__all__ = ["EXTRACTOR_VERSION", "TAXONOMY_VERSION", "analyze_job_snapshot", "canonical_skill"]
 
 SKILL_ALIASES = {
     "postgres": "PostgreSQL",
@@ -32,7 +36,7 @@ SKILL_ALIASES = {
 
 def canonical_skill(value: str) -> str:
     normalized = re.sub(r"\s+", " ", value.strip().lower())
-    return SKILL_ALIASES.get(normalized, value.strip())
+    return canonical_name(normalized) or SKILL_ALIASES.get(normalized, value.strip())
 
 
 def _get_or_create_skill(db: Session, value: str) -> Skill:
@@ -102,6 +106,7 @@ def analyze_job_snapshot(
         "education": record.get("education", []),
         "compensation": record.get("compensation"),
         "job_status": record.get("status", "active"),
+        "requirements_source": "structured" if requirements else "none",
     }
     analysis = JobAnalysis(
         job_snapshot_id=snapshot.id,
@@ -132,6 +137,10 @@ def analyze_job_snapshot(
 
     if not isinstance(requirements, list):
         analysis.status = "needs_review"
+        db.flush()
+        return analysis
+    if not requirements:
+        _add_text_requirements(db, analysis, source_text)
         db.flush()
         return analysis
 
@@ -173,3 +182,40 @@ def analyze_job_snapshot(
         )
     db.flush()
     return analysis
+
+
+def _add_text_requirements(db: Session, analysis: JobAnalysis, source_text: str) -> None:
+    """Skills read from the description when the provider gives no structured list. Each
+    requirement keeps its sentence as verbatim evidence; one that cannot be located in the
+    text is dropped, never stored without evidence."""
+    added = 0
+    for index, item in enumerate(extract_text_requirements(source_text)):
+        evidence = _add_evidence(
+            db,
+            analysis,
+            field_path=f"requirements_text[{index}].evidence",
+            quote=item.evidence,
+            source_text=source_text,
+            confidence=item.confidence,
+        )
+        if evidence.start_offset is None:
+            db.delete(evidence)
+            continue
+        db.add(
+            JobRequirement(
+                analysis_id=analysis.id,
+                skill_id=_get_or_create_skill(db, item.skill).id,
+                skill_text=item.skill,
+                requirement_kind=item.kind,
+                importance=1.0 if item.kind == "required" else 0.5,
+                minimum_years=item.minimum_years,
+                evidence_id=evidence.id,
+            )
+        )
+        added += 1
+    if added:
+        analysis.structured_json = {
+            **analysis.structured_json,
+            "requirements_source": "text",
+        }
+        analysis.confidence = TEXT_EXTRACTOR_CONFIDENCE

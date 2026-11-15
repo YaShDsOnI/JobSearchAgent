@@ -105,6 +105,12 @@ Implemented in Phase 7, second increment (`docs/roadmap.md`, "Decision record: P
 - **Retired keys.** Remove a previous key from the deployment once `artifact-key-status` reports `previous_keys_still_needed: false`. Keep it in escrow until every backup taken before the rotation has passed the 35-day retention, because those backups hold blobs under it. `python -m app.backup verify` reports the key fingerprints each backup needs.
 - **A leaked key.** Rotation protects the live store only. Backups taken before the rotation remain readable with the leaked key. The runbook says when to delete them.
 
+### Automatic matching
+
+- The agent processes a candidate's profile only with the candidate's `automatic_matching` consent. Withdrawing the consent stops it before the next refresh.
+- Matching is local and deterministic. Nothing leaves the deployment, and nothing is drafted, approved, or submitted on the candidate's behalf.
+- Job text is untrusted input. The text extractor only recognizes taxonomy skill names and never reads geography, authorization, sponsorship, salary, or education from prose. A job description therefore cannot make a job eligible, and it cannot steer any action.
+
 ## Identity and access
 
 - Use an established identity provider with secure session cookies, CSRF protection, rate limiting, and step-up authentication for exporting/deleting data and approving applications.
