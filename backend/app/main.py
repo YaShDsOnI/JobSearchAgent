@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.routes import (
+    agent,
     applications,
     auth,
     catalog,
@@ -80,6 +81,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 
 app.include_router(health.router, prefix=settings.api_prefix)
+app.include_router(agent.router, prefix=settings.api_prefix)
 app.include_router(auth.router, prefix=settings.api_prefix)
 app.include_router(profile.router, prefix=settings.api_prefix)
 app.include_router(catalog.router, prefix=settings.api_prefix)

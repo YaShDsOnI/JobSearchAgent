@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from sqlalchemy import desc, select
@@ -18,7 +19,30 @@ from app.db.models import (
 )
 from app.services.requirements import analyze_job_snapshot, canonical_skill
 
-POLICY_VERSION = "deterministic-v1"
+# deterministic-v2: fit reports `requirements_known` and stays neutral (50) when a job has
+# no scoreable requirement instead of reporting a full match; preferences add the ordered
+# location ladder (`location_policy`), seniority, and word-order-independent title matching.
+# Eligibility rules are unchanged from v1.
+POLICY_VERSION = "deterministic-v2"
+UNKNOWN_FIT_SCORE = 50.0
+LOCATION_CATEGORY_LABELS = {
+    "global_remote": "global remote",
+    "remote_from_home": "remote from your home country",
+    "local_remote": "remote with an employer in your home country",
+    "hybrid_home": "hybrid in your home country",
+    "onsite_home": "on-site in your home country",
+    "abroad": "hybrid or on-site abroad",
+}
+_TITLE_SYNONYMS = {
+    "sr": "senior",
+    "jr": "junior",
+    "eng": "engineer",
+    "engineering": "engineer",
+    "dev": "developer",
+    "mgr": "manager",
+    "swe": "software engineer",
+}
+_TITLE_STOPWORDS = {"and", "or", "of", "the", "a", "an", "i", "ii", "iii"}
 
 
 class MatchInputError(ValueError):
@@ -325,6 +349,26 @@ def _fit(
             )
     required_score = matched_required / len(required) if required else 1.0
     preferred_score = matched_preferred / len(preferred) if preferred else 1.0
+    if not (required or preferred or education_requirements):
+        reasons.append(
+            _reason(
+                "requirements_unknown",
+                "No required or preferred skills could be identified in this job, so fit "
+                "is unknown rather than a full match.",
+                "job",
+            )
+        )
+        return UNKNOWN_FIT_SCORE, reasons, {
+            "required_total": 0,
+            "required_matched": 0,
+            "preferred_total": 0,
+            "preferred_matched": 0,
+            "education_total": 0,
+            "education_matched": 0,
+            "education_score": 1.0,
+            "requirements_known": False,
+            "requirements_source": analysis_data.get("requirements_source", "none"),
+        }
     if education_requirements:
         education_score = education_matched / len(education_requirements)
         score = round(
@@ -341,6 +385,8 @@ def _fit(
         "education_total": len(education_requirements),
         "education_matched": education_matched,
         "education_score": education_score,
+        "requirements_known": True,
+        "requirements_source": analysis_data.get("requirements_source", "structured"),
     }
 
 
@@ -356,10 +402,15 @@ def _preference(
     rules = preference.rules_json
     components: dict[str, float] = {}
     reasons: list[dict[str, Any]] = []
-    target_roles = [str(item).lower() for item in rules.get("target_roles", [])]
+    target_roles = [
+        str(item).lower() for item in rules.get("target_roles", []) if str(item).strip()
+    ]
     title = job.title.lower()
     if target_roles:
-        matched = any(role in title or title in role for role in target_roles)
+        matched = any(
+            role in title or title in role or _title_tokens(role) <= _title_tokens(title)
+            for role in target_roles
+        )
         components["target_role"] = 100.0 if matched else 0.0
         reasons.append(
             _reason(
@@ -372,8 +423,31 @@ def _preference(
         )
     else:
         components["target_role"] = 50.0
+    location_policy = rules.get("location_policy")
+    extra: dict[str, Any] = {}
+    if location_policy:
+        ladder_score, ladder_reason, category = _location_ladder(
+            job, analysis_data, location_policy
+        )
+        components["location_policy"] = ladder_score
+        reasons.append(ladder_reason)
+        extra["location_category"] = category
+    seniority = [str(item).lower() for item in rules.get("seniority", []) if str(item).strip()]
+    if seniority and location_policy:
+        tokens = _title_tokens(title)
+        matched = any(_title_tokens(item) <= tokens for item in seniority)
+        components["seniority"] = 100.0 if matched else 0.0
+        reasons.append(
+            _reason(
+                "seniority_match" if matched else "seniority_unstated",
+                "The job title states a preferred seniority."
+                if matched
+                else "The job title does not state a preferred seniority.",
+                "preference",
+            )
+        )
     work_modes = [str(item).lower() for item in rules.get("work_modes", [])]
-    if work_modes:
+    if work_modes and not location_policy:
         mode = str(job.work_mode).lower()
         matched = mode in work_modes
         components["work_mode"] = 100.0 if matched else 0.0
@@ -389,7 +463,7 @@ def _preference(
     else:
         components["work_mode"] = 50.0
     locations = [str(item).lower() for item in rules.get("location_preferences", [])]
-    if locations:
+    if locations and not location_policy:
         location = (job.location_text or "").lower()
         matched = any(item in location for item in locations)
         components["location"] = 100.0 if matched else 0.0
@@ -445,8 +519,97 @@ def _preference(
                     "preference",
                 )
             )
+    if location_policy:
+        # The ladder carries the most weight, then the role, then pay and seniority. A
+        # preference the candidate did not state is left out instead of counting as 50.
+        if not target_roles:
+            components.pop("target_role", None)
+        # The ladder replaces the flat work-mode and location checks.
+        components = {name: value for name, value in components.items() if name in _V2_WEIGHTS}
+        total = sum(_V2_WEIGHTS[name] for name in components)
+        score = round(
+            sum(components[name] * _V2_WEIGHTS[name] for name in components) / total, 2
+        )
+        return score, reasons, {**components, **extra}
     score = round(sum(components.values()) / len(components), 2)
     return score, reasons, components
+
+
+_V2_WEIGHTS = {"location_policy": 4.0, "target_role": 3.0, "compensation": 2.0, "seniority": 1.0}
+
+
+def _title_tokens(value: str) -> set[str]:
+    tokens: set[str] = set()
+    for word in re.findall(r"[a-z0-9+#.]+", value.lower()):
+        word = word.strip(".")
+        if not word or word in _TITLE_STOPWORDS:
+            continue
+        tokens.update(_TITLE_SYNONYMS.get(word, word).split())
+    return tokens
+
+
+def _location_ladder(
+    job: JobPosting, analysis_data: dict[str, Any], policy: dict[str, Any]
+) -> tuple[float, dict[str, Any], str | None]:
+    """Score the job's place on the candidate's ordered location ladder (0 to 100)."""
+    home = str(policy.get("home_country", "")).upper()
+    priorities = [str(item) for item in policy.get("priorities", [])]
+    category = _location_category(job, analysis_data, home)
+    if category is None:
+        return 50.0, _reason(
+            "location_category_unknown",
+            "The job's work mode or location is not stated clearly enough to place it on "
+            "your location ladder.",
+            "preference",
+        ), None
+    label = LOCATION_CATEGORY_LABELS[category]
+    if category == "abroad" and policy.get("open_to_relocation") is False:
+        return 0.0, _reason(
+            "relocation_not_wanted",
+            "The job is hybrid or on-site abroad and you are not open to relocation.",
+            "preference",
+        ), category
+    if category not in priorities:
+        return 0.0, _reason(
+            "location_category_excluded",
+            f"The job is {label}, which is not on your location ladder.",
+            "preference",
+        ), category
+    position = priorities.index(category)
+    score = 100.0 * (len(priorities) - position) / len(priorities)
+    message = f"The job is {label}: choice {position + 1} of {len(priorities)} on your ladder."
+    cities = [str(item).lower() for item in policy.get("preferred_cities", []) if item]
+    if category in {"hybrid_home", "onsite_home"} and cities:
+        location = f"{job.location_text or ''} {analysis_data.get('location_text') or ''}"
+        city_index = next(
+            (index for index, city in enumerate(cities) if city in location.lower()), None
+        )
+        if city_index is None:
+            score *= 0.5
+            message += " Its city is not one of your preferred cities."
+        else:
+            score *= 0.5 + 0.5 * (len(cities) - city_index) / len(cities)
+            message += f" Its city is your preferred city {city_index + 1} of {len(cities)}."
+    return round(score, 2), _reason(f"location_ladder_{category}", message, "preference"), category
+
+
+def _location_category(job: JobPosting, analysis_data: dict[str, Any], home: str) -> str | None:
+    mode = str(analysis_data.get("work_mode") or job.work_mode or "unknown").lower()
+    country = str(analysis_data.get("location_country") or "").upper() or None
+    permitted = {str(item).upper() for item in analysis_data.get("permitted_countries") or []}
+    if not home or mode not in {"remote", "hybrid", "onsite"}:
+        return None
+    if mode == "remote":
+        if country == home:
+            return "local_remote"
+        if home in permitted:
+            return "global_remote" if len(permitted) > 1 else "remote_from_home"
+        # Remote, with a stated geography that excludes the home country. With no stated
+        # geography the category is unknown (eligibility already routes it to review).
+        return "abroad" if permitted else None
+    if country is None:
+        return None
+    return f"{mode}_home" if country == home else "abroad"
 
 
 def match_job_for_user(

@@ -57,6 +57,27 @@ flowchart TD
   N -- no --> P[Blocked/failed; human action]
 ```
 
+## Agent loop
+
+The agent keeps each consenting candidate's matches current. It never decides or sends anything (`backend/app/services/agent.py`).
+
+```mermaid
+flowchart LR
+  I[Ingestion run with created, updated, or reopened postings] --> Q[agent_match_refresh task]
+  P[New profile or preference version] --> Q
+  E[Candidate enables the agent] --> Q
+  Q --> W[Worker: match every visible active job lacking a current match]
+  W --> R[Recommendations: ready, review, unmatched, ineligible]
+  R --> A[Next actions for the candidate]
+  A --> H[Candidate: review, draft CV, approve, apply]
+```
+
+- **Consent.** The `automatic_matching` consent turns the agent on. Withdrawing it stops queued work at once, because the worker re-checks the consent before each refresh. `POST /agent/refresh` matches on request whether or not the agent is on.
+- **One refresh per input state.** The task's idempotency key hashes the profile version, preference version, policy version, extractor version, and catalog state. A burst of triggers therefore runs one refresh, and a refresh with unchanged inputs does nothing.
+- **Current matches.** A match is current when its snapshot, profile version, preference version, and policy version are the latest. Stale matches stay visible and are flagged.
+- **Review decisions.** A resolved eligibility review is carried into a new match only on the same job snapshot and the same profile version. A changed posting or profile needs a new review.
+- **Candidate actions stay manual.** CV drafting, package approval, and submission remain candidate actions. Next actions only point at them.
+
 ## State and reliability rules
 
 Every long-running action is a durable task with a unique idempotency key. Tasks use a lease and heartbeat; a crashed worker can be reclaimed after expiry. Retries are bounded and classified:
