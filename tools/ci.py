@@ -4,6 +4,7 @@
     python tools/ci.py --quick          # lint + SQLite tests (no Docker, no network)
     python tools/ci.py --only lint test-sqlite
     python tools/ci.py --skip audit     # e.g. when offline
+    python tools/ci.py --only frontend ui-smoke   # browser smoke test of the workspace
     python tools/ci.py --with proxy-verify   # also run the real egress proxy checks
     python tools/ci.py --list
     python tools/ci.py --install-hook   # git pre-push hook that runs --quick
@@ -202,6 +203,55 @@ def stage_frontend(ctx: Context) -> str:
     return "tsc + vite build"
 
 
+def stage_ui_smoke(ctx: Context) -> str:
+    """Throwaway backend (SQLite, fixture jobs) + built frontend, driven by headless Chromium."""
+    import tempfile
+
+    node = _tool("node")
+    with tempfile.TemporaryDirectory(prefix="jfa-ui-smoke-") as scratch:
+        work = Path(scratch)
+        api_port, web_port = _free_port(), _free_port()
+        env = _test_env(
+            ctx,
+            APP_ENV="development",
+            DATABASE_URL=f"sqlite+pysqlite:///{(work / 'ui.db').as_posix()}",
+            ARTIFACT_STORAGE_PATH=str(work / "artifacts"),
+            COOKIE_SECURE="false",
+            CORS_ORIGINS=f"http://127.0.0.1:{web_port}",
+        )
+        ctx.run([ctx.python, "-m", "alembic", "upgrade", "head"], cwd=BACKEND, env=env)
+        ctx.run([ctx.python, "-m", "app.seed_fixture"], cwd=BACKEND, env=env)
+        if not (FRONTEND / "dist" / "index.html").exists():
+            ctx.run([_tool("npm"), "run", "-s", "build"], cwd=FRONTEND)
+        log = (work / "servers.log").open("w", encoding="utf-8")
+        api = subprocess.Popen(
+            [str(ctx.python), "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1",
+             "--port", str(api_port)],
+            cwd=BACKEND, env={**os.environ, **env}, stdout=log, stderr=subprocess.STDOUT,
+        )
+        web = subprocess.Popen(
+            [node, str(FRONTEND / "node_modules" / "vite" / "bin" / "vite.js"), "preview",
+             "--host", "127.0.0.1", "--port", str(web_port), "--strictPort"],
+            cwd=FRONTEND,
+            env={**os.environ, "JOBFINDER_API_PROXY": f"http://127.0.0.1:{api_port}"},
+            stdout=log, stderr=subprocess.STDOUT,
+        )
+        try:
+            out = ROOT / "tmp" / "ui-smoke"
+            ctx.run([ctx.python, ROOT / "tools" / "ui_smoke.py",
+                     "--base", f"http://127.0.0.1:{web_port}",
+                     "--api", f"http://127.0.0.1:{api_port}", "--out", out], env=env)
+        finally:
+            for process in (web, api):
+                process.terminate()
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+            log.close()
+    return "sign-up to review package, every view at desktop and phone width"
+
+
 def stage_images(ctx: Context) -> str:
     docker = _tool("docker")
     ctx.run([docker, "build", "-q", "-t", "jobfinderagent-backend:ci", BACKEND])
@@ -254,6 +304,8 @@ STAGES: tuple[Stage, ...] = (
           "pytest + Alembic round trip + drift check on disposable PostgreSQL (Docker)"),
     Stage("audit", stage_audit, "pip-audit of the backend environment (network)"),
     Stage("frontend", stage_frontend, "frontend type check and production build"),
+    Stage("ui-smoke", stage_ui_smoke,
+          "browser smoke test of the candidate workspace (Chromium, throwaway backend)"),
     Stage("images", stage_images, "build backend and egress-proxy images (Docker)"),
     Stage("proxy-verify", stage_proxy_verify,
           "real egress proxy enforcement checks (Docker + network)", default=False),

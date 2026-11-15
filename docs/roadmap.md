@@ -290,6 +290,23 @@ Stored-data change: none. Suggestions are derived on request and never stored.
 
 Evidence: `docs/testing.md`, "CV fact suggestion tests".
 
+### Candidate workspace implementation note (2026-11-16)
+
+Implemented under "Decision record: agent build-out program (2026-11-16)", item 4.
+
+The old single-page dashboard is replaced by a workspace with eight views: overview, jobs, profile, preferences, CVs, applications, tracker, and sources. Its structure is in `docs/architecture.md`, "Candidate workspace". The workspace exposes:
+
+- the agent loop;
+- the ranked recommendations;
+- the three separate verdicts with their evidence;
+- CV fact suggestions;
+- the structured fact editor;
+- the location ladder.
+
+The review-package and sandbox-submission panels keep their behaviour. `tools/ui_smoke.py` and the `ui-smoke` CI stage drive the whole flow in Chromium.
+
+Stored-data change: none.
+
 ## Phase 8 — expansion only by evidence
 
 Add connectors one at a time after policy review, fixtures, terms/authorization, rate limits, observability, and rollback. Consider additional models, vector retrieval, multilingual support, and more ATS adapters only when the simpler design fails a measured need.

@@ -57,6 +57,19 @@ flowchart TD
   N -- no --> P[Blocked/failed; human action]
 ```
 
+## Candidate workspace (frontend)
+
+`frontend/` is a React single-page app with hash routes and one view per area (`frontend/src/views/`):
+
+- **Overview:** agent switch, counts, next actions, top eligible jobs.
+- **Jobs:** ranked buckets and search. The job detail shows eligibility, fit, and preference side by side with their reasons; resolves reviews; drafts a CV.
+- **Profile:** CV upload and suggested facts, a fact editor per type, export and deletion.
+- **Preferences:** roles, pay, and the ordered location ladder and cities.
+- **CVs, Applications, Tracker:** review, approve, and record. Approval and submission keep their Phase 5C and 6 controls.
+- **Sources:** approved sources with policy and health.
+
+The workspace only calls the documented API. It holds no state beyond the session cookie, and every consequential action (save a profile version, approve a CV or package, submit to the sandbox) is an explicit button press by the candidate.
+
 ## Agent loop
 
 The agent keeps each consenting candidate's matches current. It never decides or sends anything (`backend/app/services/agent.py`).
