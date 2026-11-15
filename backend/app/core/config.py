@@ -79,6 +79,19 @@ class Settings(BaseSettings):
         default="http://127.0.0.1:8100", validation_alias="SANDBOX_ATS_ORIGIN"
     )
 
+    # Optional model-assisted extraction of job requirements (public job text only).
+    # Off by default. Design: docs/security.md, "Model-assisted extraction".
+    model_extraction_enabled: bool = Field(
+        default=False, validation_alias="MODEL_EXTRACTION_ENABLED"
+    )
+    model_api_key_ref: str = Field(default="", validation_alias="MODEL_API_KEY_REF")
+    model_extraction_model: str = Field(
+        default="claude-opus-5-5", validation_alias="MODEL_EXTRACTION_MODEL"
+    )
+    model_daily_token_budget: int = Field(
+        default=2_000_000, gt=0, le=1_000_000_000, validation_alias="MODEL_DAILY_TOKEN_BUDGET"
+    )
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     @property
@@ -136,6 +149,7 @@ class Settings(BaseSettings):
                 raise RuntimeError(f"SOURCE_EGRESS_ALLOWLIST entry is not a valid host: {entry}")
         self._validate_egress_proxy()
         self._validate_alerting()
+        self._validate_model_extraction()
         self._validate_sandbox_origin()
 
     def _validate_sandbox_origin(self) -> None:
@@ -170,6 +184,22 @@ class Settings(BaseSettings):
         ):
             raise RuntimeError(
                 "SOURCE_EGRESS_PROXY_URL must be http://host:port with no credentials or path"
+            )
+
+    def _validate_model_extraction(self) -> None:
+        if not self.model_extraction_enabled:
+            return
+        if not self.model_api_key_ref.strip():
+            raise RuntimeError(
+                "MODEL_API_KEY_REF is required when MODEL_EXTRACTION_ENABLED is true"
+            )
+        if not self.is_development_like and (
+            not self.source_egress_proxy_url.strip()
+            or "api.anthropic.com" not in self.source_egress_allowlist_entries
+        ):
+            raise RuntimeError(
+                "Outside development, model extraction needs SOURCE_EGRESS_PROXY_URL and "
+                "api.anthropic.com in SOURCE_EGRESS_ALLOWLIST"
             )
 
     def _validate_alerting(self) -> None:

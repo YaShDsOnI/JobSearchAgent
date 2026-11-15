@@ -271,6 +271,21 @@ The restore drill in a deployed environment (`docs/runbooks.md`, "Restore drill"
 
 A key rotation in a deployed environment (`docs/runbooks.md`, "Artifact key rotation") is manual. It has not been run yet.
 
+### Model-assisted extraction tests
+
+`tests/test_model_extraction.py` uses a fake client, so there is no network and no spend:
+
+- **Off by default.** The model is never called while the setting is off.
+- **When on.**
+  - Validated requirements drive fit, and invented evidence, skills missing from their evidence, and invalid kinds are dropped.
+  - The request holds only `<job_posting>` text, with no candidate data. It uses a JSON schema and server-side fallback.
+  - An injected instruction in the posting cannot change eligibility.
+  - The audit holds token counts but no text, and pilot metrics sum the tokens.
+- **Failures.** A network error, a refusal, invalid JSON, and an empty result each fall back to the rules with a recorded `model_status`.
+- **Budget.** The daily token budget stops calls.
+- **Settings.** A key reference is required, and production also needs the egress proxy and allowlist.
+- **Freshness.** Turning the model on marks earlier matches out of date.
+
 ### CV fact suggestion tests
 
 `tests/test_cv_suggestions.py`:

@@ -290,6 +290,17 @@ Stored-data change: none. Suggestions are derived on request and never stored.
 
 Evidence: `docs/testing.md`, "CV fact suggestion tests".
 
+### Model-assisted extraction implementation note (2026-11-16)
+
+Implemented under "Decision record: agent build-out program (2026-11-16)", item 6. Off by default.
+
+- `backend/app/services/model_extraction.py` and the `rules-v2+model-assisted-v1` extractor path.
+- The `anthropic` SDK dependency, the daily token budget (the cost budget deferred from Phase 7), and model usage in pilot metrics.
+
+Nothing has been sent to a model provider from any deployment yet. Enabling it needs an API key secret, the egress allowlist entry, and the retention record in `docs/security.md`.
+
+Evidence: `docs/testing.md`, "Model-assisted extraction tests".
+
 ### Phase 7 remainder implementation note (2026-11-16)
 
 Implemented under "Decision record: agent build-out program (2026-11-16)", item 5:

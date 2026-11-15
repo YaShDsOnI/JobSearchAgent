@@ -23,6 +23,11 @@ x-backend-env: &backend-env
   SECRETS_DIR: /run/secrets
   ALERT_WEBHOOK_REF: ${ALERT_WEBHOOK_REF:-}
   ALERT_WEBHOOK_HOST: ${ALERT_WEBHOOK_HOST:-}
+  # Optional model-assisted job extraction (docs/security.md, "Model-assisted extraction").
+  MODEL_EXTRACTION_ENABLED: ${MODEL_EXTRACTION_ENABLED:-false}
+  MODEL_API_KEY_REF: ${MODEL_API_KEY_REF:-}
+  MODEL_EXTRACTION_MODEL: ${MODEL_EXTRACTION_MODEL:-claude-opus-5-5}
+  MODEL_DAILY_TOKEN_BUDGET: ${MODEL_DAILY_TOKEN_BUDGET:-2000000}
 
 x-backend: &backend
   build: ./backend

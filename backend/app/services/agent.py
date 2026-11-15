@@ -51,7 +51,7 @@ from app.services.applications import is_applied
 from app.services.audit import record_audit
 from app.services.catalog import visible_to_user
 from app.services.matching import POLICY_VERSION, MatchInputError, match_job_for_user
-from app.services.requirements import EXTRACTOR_VERSION
+from app.services.requirements import active_extractor_version
 from app.services.tasks import (
     claim_next_task,
     complete_task,
@@ -121,7 +121,7 @@ def enqueue_match_refresh(db: Session, user_id: str, *, reason: str) -> Task | N
             profile.current_version_id,
             _current_preference_id(db, user_id) or "-",
             POLICY_VERSION,
-            EXTRACTOR_VERSION,
+            active_extractor_version(),
             _catalog_marker(db, user_id),
         ]
     )
@@ -213,7 +213,7 @@ def _has_current_match(
                 MatchRun.profile_version_id == profile_version_id,
                 preference_match,
                 MatchRun.policy_version == POLICY_VERSION,
-                MatchRun.extractor_version == EXTRACTOR_VERSION,
+                MatchRun.extractor_version == active_extractor_version(),
             )
             .limit(1)
         )
@@ -358,6 +358,7 @@ def recommendations(db: Session, user_id: str) -> list[Recommendation]:
     profile = db.get(CandidateProfile, user_id)
     profile_version_id = profile.current_version_id if profile else None
     preference_version_id = _current_preference_id(db, user_id)
+    extractor_version = active_extractor_version()
     applications = {
         application.job_id: application
         for application in db.scalars(
@@ -382,6 +383,7 @@ def recommendations(db: Session, user_id: str) -> list[Recommendation]:
             and match.profile_version_id == profile_version_id
             and match.preference_version_id == preference_version_id
             and match.policy_version == POLICY_VERSION
+            and match.extractor_version == extractor_version
         )
         if match is None:
             bucket, rank = "unmatched", None

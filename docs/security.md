@@ -110,6 +110,22 @@ Implemented in Phase 7, second increment (`docs/roadmap.md`, "Decision record: P
 - **Retired keys.** Remove a previous key from the deployment once `artifact-key-status` reports `previous_keys_still_needed: false`. Keep it in escrow until every backup taken before the rotation has passed the 35-day retention, because those backups hold blobs under it. `python -m app.backup verify` reports the key fingerprints each backup needs.
 - **A leaked key.** Rotation protects the live store only. Backups taken before the rotation remain readable with the leaked key. The runbook says when to delete them.
 
+### Model-assisted extraction
+
+Optional, and off by default (`MODEL_EXTRACTION_ENABLED=false`). Implementation: `backend/app/services/model_extraction.py`.
+
+| Item | Decision |
+|---|---|
+| Provider and model | Anthropic API, `MODEL_EXTRACTION_MODEL` (default `claude-opus-5-5`). On a policy decline, the API's server-side fallback (`fallbacks: "default"`) may answer with another Claude model; the audit records the model that served. |
+| Data sent | Only the job description text of a posting that has no structured requirements. It is already public. No candidate fact, CV, preference, answer, email, or identifier is ever sent. |
+| Region and retention | Requests go to `api.anthropic.com` under the deployment's Anthropic organization and its commercial terms. Before enabling, the operator records the organization's data retention and region settings. The product owner confirms they are acceptable for job text. |
+| Credentials | `MODEL_API_KEY_REF`, a `file:` secret reference (`env:` only in development and test). The key is registered for log redaction. |
+| Egress | Outside development: `SOURCE_EGRESS_PROXY_URL` must be set and `api.anthropic.com` must be in `SOURCE_EGRESS_ALLOWLIST`. The SDK client then tunnels through the egress proxy. |
+| Budget | `MODEL_DAILY_TOKEN_BUDGET` (default 2,000,000 input plus output tokens per UTC day), counted from the audit trail. Once spent, extraction falls back to the rules. |
+| Prompt injection | The posting is wrapped as `<job_posting>` data, and the system prompt says never to follow instructions in it. Output is constrained by a JSON schema. A requirement is kept only if its evidence is verbatim job text that names the skill. The model can only add fit evidence: it never touches eligibility, geography, authorization, sponsorship, salary, or any action. |
+| Switch | Set `MODEL_EXTRACTION_ENABLED=false` and restart the API and worker. Analyses already made stay as recorded, and new ones use `rules-v2`. |
+| Audit | `model.extraction_called` records the requested and served models, prompt version, token counts, kept and dropped counts, and the stop reason. It never records job text. |
+
 ### Uploaded CV parsing and fact suggestions
 
 - **The document is untrusted.** Text is extracted in a separate Python interpreter (`app/services/document_text_worker.py`) started in isolated mode:
