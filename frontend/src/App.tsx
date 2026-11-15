@@ -9,6 +9,7 @@ import { Overview } from "./views/Overview";
 import { Preferences } from "./views/Preferences";
 import { Profile } from "./views/Profile";
 import { Sources } from "./views/Sources";
+import { Metrics, SupportCases } from "./views/Support";
 
 type AuthMode = "login" | "register";
 
@@ -52,7 +53,12 @@ function Workspace({ user, onSignedOut, error, setError }: { user: User; onSigne
     }
   }
 
-  const active = NAV.find((item) => item.view === route.view) ?? NAV[0];
+  const nav = [
+    ...NAV,
+    ...(user.role === "support" ? [{ view: "support", label: "Support cases", hint: "Cases candidates shared with you" }] : []),
+    ...(user.role === "operator" ? [{ view: "metrics", label: "Pilot metrics", hint: "Aggregate, small counts hidden" }] : []),
+  ];
+  const active = nav.find((item) => item.view === route.view) ?? nav[0];
   return (
     <div className="workspace">
       <a className="skip-link" href="#main">Skip to content</a>
@@ -60,7 +66,7 @@ function Workspace({ user, onSignedOut, error, setError }: { user: User; onSigne
         <div className="brand"><p className="eyebrow">JobFinderAgent</p><strong>Your job search, under your control</strong></div>
         <nav aria-label="Workspace">
           <ul>
-            {NAV.map((item) => (
+            {nav.map((item) => (
               <li key={item.view}>
                 <a href={`#/${item.view}`} aria-current={item.view === active.view ? "page" : undefined} className={item.view === active.view ? "active" : ""}>
                   <span>{item.label}</span><small>{item.hint}</small>
@@ -89,6 +95,8 @@ function View({ view, id, setError }: { view: string; id: string | null; setErro
     case "applications": return <Applications id={id} setError={setError} />;
     case "tracker": return <TrackerPanel refreshKey={0} setError={setError} />;
     case "sources": return <Sources setError={setError} />;
+    case "support": return <SupportCases id={id} setError={setError} />;
+    case "metrics": return <Metrics setError={setError} />;
     default: return <Overview setError={setError} />;
   }
 }

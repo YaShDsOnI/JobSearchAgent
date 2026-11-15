@@ -717,3 +717,29 @@ class DataRequest(Base):
     status: Mapped[str] = mapped_column(String(32), default="requested")
     requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SupportAccessGrant(Base):
+    """A candidate's time-boxed, read-only grant letting one support account see a redacted
+    summary of their case (Phase 7). No fact values, documents, answers, or contact details
+    are ever shown through it. Deleted with the candidate's profile."""
+
+    __tablename__ = "support_access_grants"
+    __table_args__ = (
+        CheckConstraint("scope IN ('summary')", name="ck_support_access_grants_scope"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    support_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    scope: Mapped[str] = mapped_column(String(32), default="summary")
+    reason: Mapped[str] = mapped_column(String(500))
+    granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_viewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    view_count: Mapped[int] = mapped_column(Integer, default=0)

@@ -234,6 +234,24 @@ Manual browser check (2026-11-13, Chrome on Windows, throwaway database, sandbox
 
 The restore drill in a deployed environment (`docs/runbooks.md`, "Restore drill") is manual. It has not been run yet.
 
+### Phase 7 support access, pilot metrics, and off-site copy tests
+
+`tests/test_phase7_support_metrics.py`:
+
+- **Support access.**
+  - A candidate's grant lets the named support account see a summary of counts only. The candidate's email, fact values, and phone number appear nowhere in it.
+  - The view is audited on the candidate's record and counted on the grant.
+  - Non-support accounts get 403; another support account, an expired grant, and a revoked grant get 404.
+  - The duration (1 to 72 hours), the support account, and self-grants are validated, and a new grant replaces the old one.
+  - Grants are exported and deleted with the profile.
+  - Roles change only through the CLI.
+- **Pilot metrics.** Operators only. Small counts show as `<5`, and no email appears. The CLI works.
+- **Off-site copies.**
+  - A copy is verified at the target and never re-copied over itself.
+  - Ledgers merge without losing entries.
+  - A tampered source is refused, leaving nothing at the target, and so is a target equal to the source directory.
+  - The CLI requires a non-blank approval reference and audits it.
+
 ### Phase 7 artifact key rotation tests
 
 `tests/test_phase7_key_rotation.py` runs on SQLite and, in the `test-postgres` stage, on PostgreSQL.

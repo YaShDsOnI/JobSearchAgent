@@ -46,7 +46,10 @@ docker compose --profile ops run --rm backup prune --out-root /backups --keep-da
 - Run `create` at least daily from the host scheduler (cron or a systemd timer). The repository does not ship a host scheduler.
 - `--ledger` merges completed deletions into the deletion ledger in the same step (see "Deletion replay").
 - Run `verify` after every `create`. A backup that was never verified does not count.
-- Copy each verified directory and the ledger off the host. The repository does not ship off-site replication; choose a target the product owner approves for personal data.
+- Copy each verified backup and the ledger off the host with `python -m app.backup replicate --backup DIR --target-root OFFSITE --approval-ref REF --ledger /backups/deletion-ledger.json`.
+  - `OFFSITE` is a mounted directory on the off-site target, such as an object-store mount or a remote volume, that the product owner approved for personal data. `REF` points at that approval.
+  - The command verifies the backup, copies it as `.partial`, verifies the copy, then renames it. It merges the ledger and never replaces it.
+  - Run `prune --out-root OFFSITE --keep-days 35` there as well.
 - Retention is 35 days (`prune --keep-days 35`). `prune` deletes only directories this tool created, always keeps the newest complete backup, and removes abandoned `.partial` directories past the cutoff. Apply the same retention to off-site copies. A deleted candidate's data can survive in backups for at most this long, and a restore cannot bring it back because of deletion replay.
 
 ### Deletion replay
@@ -97,6 +100,18 @@ Rotate `ARTIFACT_ENCRYPTION_KEY` on a schedule the product owner sets (for examp
 5. **Back up.** Take and verify a new backup ("Schedule"). `verify` must list only the new fingerprint in `artifact_key_ids`.
 6. **Retire the old key.** Remove it from `ARTIFACT_PREVIOUS_ENCRYPTION_KEYS` and recreate the services. Keep it in escrow until every backup taken before step 5 has been pruned (35 days). Then destroy it.
 7. **Record.** Note the date, both fingerprints, the counts from step 4, and the backup ID from step 5. The `artifacts.keys_rotated` audit events hold the counts and the reason.
+
+## Support access
+
+1. Create support accounts with `python -m app.admin promote-support --email E --reason R`, and remove them with `demote-support`. Both are audited.
+2. A candidate who wants help grants access in their profile ("Support access"): one support account, 1 to 72 hours, with a reason.
+3. The support person opens "Support cases" and sees only the redacted summary. Ask the candidate for anything else; never ask for passwords, cookies, or documents.
+4. Each view is recorded on the candidate's grant and in `audit_events` (`support.case_viewed`). Review these weekly during the pilot.
+5. If a support account may be compromised, run `demote-support` at once. Its grants then show nothing, because the role is checked on every request. Then review the account's `support.case_viewed` events.
+
+## Pilot metrics
+
+`python -m app.admin pilot-metrics` (or `GET /ops/metrics` as an operator) prints aggregate counts with small numbers suppressed. Record it weekly during the pilot. Investigate any non-zero count under `harmful_events`: unverified or not-received submissions, blocked sources, deletion replays, and support views.
 
 ## Leaked secret or token
 

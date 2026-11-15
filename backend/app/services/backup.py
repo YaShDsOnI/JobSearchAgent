@@ -622,9 +622,12 @@ def update_deletion_ledger(db: Session, path: Path, backup_key: bytes) -> dict[s
                 data_request_id=request.id, user_id=request.user_id, completed_at=completed_at
             ),
         )
-    ordered = sorted(
-        entries.values(), key=lambda entry: (entry.completed_at, entry.data_request_id)
-    )
+    _write_ledger(path, entries.values(), backup_key)
+    return {"entries": len(entries), "added": len(entries) - before}
+
+
+def _write_ledger(path: Path, entries: Iterable[LedgerEntry], backup_key: bytes) -> None:
+    ordered = sorted(entries, key=lambda entry: (entry.completed_at, entry.data_request_id))
     document: dict[str, Any] = {
         "format": LEDGER_FORMAT,
         "version": LEDGER_VERSION,
@@ -636,7 +639,74 @@ def update_deletion_ledger(db: Session, path: Path, backup_key: bytes) -> dict[s
     temporary = path.with_name(f"{path.name}.tmp")
     temporary.write_text(json.dumps(document, indent=2, sort_keys=True), encoding="utf-8")
     os.replace(temporary, path)
-    return {"entries": len(ordered), "added": len(ordered) - before}
+
+
+# --- off-site copies ---------------------------------------------------------------------
+
+
+LEDGER_FILE = "deletion-ledger.json"
+
+
+def replicate_backup(
+    path: Path,
+    target_root: Path,
+    backup_key: bytes,
+    *,
+    artifact_key: ArtifactKeys,
+    ledger: Path | None = None,
+) -> dict[str, Any]:
+    """Copy one verified backup to an off-site target (a mounted directory the operator
+    chose and the product owner approved for personal data).
+
+    The source is fully verified first. The copy is written as `<name>.partial`, verified
+    again at the target (manifest MAC, every file hash, and the database decrypting), and
+    only then renamed. A copy already present is re-verified, not overwritten. With
+    `ledger`, the deletion ledger is merged into the target's ledger, never replacing it,
+    so an off-site ledger never loses entries.
+    """
+    if not _DIR_NAME.match(path.name):
+        raise BackupError("not a backup directory created by this tool")
+    source = load_backup(path, backup_key, artifact_key=artifact_key)
+    if target_root.resolve() == path.parent.resolve():
+        raise BackupError("the target must differ from the backup's own directory")
+    target_root.mkdir(parents=True, exist_ok=True)
+    final = target_root / path.name
+    already_present = final.exists()
+    if already_present:
+        load_backup(final, backup_key, artifact_key=None)
+    else:
+        partial = target_root / f"{path.name}{PARTIAL_SUFFIX}"
+        shutil.rmtree(partial, ignore_errors=True)
+        try:
+            shutil.copytree(path, partial)
+            copied = load_backup(partial, backup_key, artifact_key=None)
+            if copied.backup_id != source.backup_id:
+                raise BackupError("the copy does not match the source backup")
+            partial.rename(final)
+        except BaseException:
+            shutil.rmtree(partial, ignore_errors=True)
+            raise
+    summary: dict[str, Any] = {
+        "backup_id": source.backup_id,
+        "target": str(final),
+        "already_present": already_present,
+    }
+    if ledger is not None:
+        summary["ledger"] = merge_ledger(ledger, target_root / LEDGER_FILE, backup_key)
+    return summary
+
+
+def merge_ledger(source: Path, target: Path, backup_key: bytes) -> dict[str, int]:
+    """Union of two authenticated ledgers, written to `target`. Both MACs are checked."""
+    entries = {entry.data_request_id: entry for entry in read_ledger(source, backup_key)}
+    before = 0
+    if target.exists():
+        existing = read_ledger(target, backup_key)
+        before = len(existing)
+        for entry in existing:
+            entries.setdefault(entry.data_request_id, entry)
+    _write_ledger(target, entries.values(), backup_key)
+    return {"entries": len(entries), "added": len(entries) - before}
 
 
 @dataclass

@@ -7,6 +7,7 @@
     python -m app.backup update-ledger --ledger FILE
     python -m app.backup replay-deletions --ledger FILE
     python -m app.backup prune --out-root DIR --keep-days N
+    python -m app.backup replicate --backup DIR --target-root DIR --approval-ref REF [--ledger F]
 
 `restore` and `replay-deletions` act on the database in DATABASE_URL and the store in
 ARTIFACT_STORAGE_PATH. Point them at the target, never at a live deployment you did not mean
@@ -32,6 +33,7 @@ from app.services.backup import (
     prune_backups,
     read_ledger,
     replay_deletions,
+    replicate_backup,
     restore_backup,
     update_deletion_ledger,
 )
@@ -75,6 +77,17 @@ def _parser() -> argparse.ArgumentParser:
     prune = commands.add_parser("prune", help="Delete backups past the retention period")
     prune.add_argument("--out-root", type=Path, required=True)
     prune.add_argument("--keep-days", type=int, required=True)
+    replicate = commands.add_parser(
+        "replicate", help="Copy a verified backup to an approved off-site target"
+    )
+    replicate.add_argument("--backup", type=Path, required=True)
+    replicate.add_argument("--target-root", type=Path, required=True)
+    replicate.add_argument(
+        "--approval-ref",
+        required=True,
+        help="Where the product owner approved this target for personal data",
+    )
+    replicate.add_argument("--ledger", type=Path, help="Also merge this deletion ledger there")
     return parser
 
 
@@ -137,6 +150,31 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
         # holds blobs under the previous key.
         artifact_key = None if args.no_decrypt_artifacts else keyring_from_settings(settings)
         return load_backup(args.backup, backup_key, artifact_key=artifact_key).summary()
+
+    if args.command == "replicate":
+        if not args.approval_ref.strip():
+            raise BackupError("--approval-ref must name the approval of the target")
+        summary = replicate_backup(
+            args.backup,
+            args.target_root,
+            backup_key,
+            artifact_key=keyring_from_settings(settings),
+            ledger=args.ledger,
+        )
+        with SessionLocal() as db:
+            record_audit(
+                db,
+                action="backup.replicated",
+                actor=_actor(),
+                object_type="backup",
+                metadata={
+                    "backup_id": summary["backup_id"],
+                    "already_present": summary["already_present"],
+                    "approval_ref": args.approval_ref.strip()[:200],
+                },
+            )
+            db.commit()
+        return summary
 
     if args.command == "update-ledger":
         with SessionLocal() as db:

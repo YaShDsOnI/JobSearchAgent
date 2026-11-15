@@ -1,6 +1,7 @@
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import { api, Artifact, FactSuggestion, jsonBody, message, Profile as ProfileData, Suggestions } from "../api";
 import { Empty, Panel, useLoad, when } from "../ui";
+import { SupportGrants } from "./Support";
 
 type FieldKind = "text" | "number" | "countries" | "select" | "bool";
 type Field = { key: string; label: string; kind: FieldKind; options?: Array<[string, string]>; placeholder?: string };
@@ -246,6 +247,7 @@ export function Profile({ setError }: { setError: (value: string) => void }) {
           <button className="danger" type="button" disabled={deleteText !== "DELETE"} onClick={deleteProfile}>Delete my profile data</button>
         </div>
       </Panel>
+      <SupportGrants setError={setError} />
     </div>
   );
 }
