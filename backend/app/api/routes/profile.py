@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from sqlalchemy import select
@@ -27,11 +28,19 @@ from app.schemas import (
     PreferencesResponse,
     ProfileVersionCreate,
     ProfileVersionResponse,
+    StrictModel,
 )
 from app.services.agent import AUTO_MATCH_PURPOSE, enqueue_match_refresh
 from app.services.applications import export_applications
 from app.services.audit import record_audit
 from app.services.cv_invalidation import supersede_cv_versions
+from app.services.cv_suggestions import (
+    SUGGESTER_VERSION,
+    DocumentTextError,
+    extract_document_text,
+    suggest_facts,
+    suggestion_payload,
+)
 from app.services.privacy import delete_candidate_data
 from app.services.storage import ArtifactStorage
 from app.services.tracker import export_entries
@@ -391,3 +400,95 @@ def delete_profile(
     )
     db.commit()
     return data_request
+
+
+class FactSuggestion(StrictModel):
+    fact_type: str
+    value: dict[str, Any]
+    provenance: str
+    confirmation_status: str
+    evidence_text: str
+    already_in_profile: bool
+
+
+class SuggestionsResponse(StrictModel):
+    source_document_id: str
+    suggester_version: str
+    warnings: list[str]
+    suggestions: list[FactSuggestion]
+
+
+@router.get("/source-documents", response_model=list[ArtifactResponse])
+def list_source_documents(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return db.scalars(
+        select(StoredArtifact)
+        .where(StoredArtifact.owner_user_id == user.id, StoredArtifact.kind == "profile-source")
+        .order_by(StoredArtifact.created_at.desc())
+    ).all()
+
+
+@router.get(
+    "/source-documents/{artifact_id}/suggestions", response_model=SuggestionsResponse
+)
+def source_document_suggestions(
+    artifact_id: str,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Facts proposed from the candidate's own uploaded CV, all `unknown` until confirmed.
+    Derived on each request and never stored (see `app.services.cv_suggestions`)."""
+    artifact = db.scalar(
+        select(StoredArtifact).where(
+            StoredArtifact.id == artifact_id,
+            StoredArtifact.owner_user_id == user.id,
+            StoredArtifact.kind == "profile-source",
+        )
+    )
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="Source document not found")
+    try:
+        content = artifact_storage().read_bytes(artifact.object_key)
+        text, warnings = extract_document_text(content, artifact.content_type)
+    except DocumentTextError as exc:
+        raise HTTPException(
+            status_code=422, detail=f"The document could not be read as text ({exc})"
+        ) from exc
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail="Source document is unavailable") from exc
+    suggestions = suggest_facts(text)
+    if not text.strip():
+        warnings = [*warnings, "no_text_found"]
+    current = get_current_profile(db, user.id)
+    existing = (
+        [
+            (fact.fact_type, fact.value_json)
+            for fact in db.scalars(
+                select(ProfileFact).where(ProfileFact.profile_version_id == current.id)
+            )
+        ]
+        if current
+        else []
+    )
+    payload = suggestion_payload(suggestions, existing)
+    record_audit(
+        db,
+        action="profile.suggestions_generated",
+        actor="user",
+        user_id=user.id,
+        object_type="stored_artifact",
+        object_id=artifact.id,
+        metadata={
+            "suggester_version": SUGGESTER_VERSION,
+            "suggestions": len(payload),
+            "warnings": warnings[:10],
+        },
+        request_id=request.state.request_id,
+    )
+    db.commit()
+    return SuggestionsResponse(
+        source_document_id=artifact.id,
+        suggester_version=SUGGESTER_VERSION,
+        warnings=warnings,
+        suggestions=[FactSuggestion(**item) for item in payload],
+    )

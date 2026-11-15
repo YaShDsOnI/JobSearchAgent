@@ -30,6 +30,14 @@ The UI and API must expose these separately. A high fit score cannot make an ine
 5. Version profile and preference changes. A historical match or application must be reproducible from its snapshots.
 6. Support deletion/export requests and consent records.
 
+Implementation note (2026-11-16): an uploaded CV can be turned into suggested facts (`GET /profile/source-documents/{id}/suggestions`):
+
+- contact details, links, skills, "N years of experience with X", education level, and certifications;
+- each with its source line, marked `unknown` until the candidate confirms it;
+- never work authorization or any sensitive attribute.
+
+See `docs/security.md`, "Uploaded CV parsing and fact suggestions".
+
 ### Job discovery and normalization
 
 1. Ingest only from an approved connector whose authorization basis and terms review are recorded.

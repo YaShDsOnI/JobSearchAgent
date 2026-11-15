@@ -278,6 +278,18 @@ Stored-data change: none. These are new connector kinds in the existing tables.
 
 Evidence: `docs/testing.md`, "Greenhouse and Lever provider tests".
 
+### CV fact suggestions implementation note (2026-11-16)
+
+Implemented under "Decision record: agent build-out program (2026-11-16)", item 3:
+
+- `backend/app/services/cv_suggestions.py` and `backend/app/services/document_text_worker.py`;
+- `GET /profile/source-documents` and `GET /profile/source-documents/{id}/suggestions`;
+- the `pypdf` dependency, used only in the isolated parser process.
+
+Stored-data change: none. Suggestions are derived on request and never stored.
+
+Evidence: `docs/testing.md`, "CV fact suggestion tests".
+
 ## Phase 8 — expansion only by evidence
 
 Add connectors one at a time after policy review, fixtures, terms/authorization, rate limits, observability, and rollback. Consider additional models, vector retrieval, multilingual support, and more ATS adapters only when the simpler design fails a measured need.

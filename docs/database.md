@@ -78,6 +78,8 @@ Deleting a user must remove or irreversibly anonymize personal data according to
 
 `stored_artifacts.encryption_key_ref` records the key that encrypted each blob, as `local:aes-gcm:<key fingerprint>`. Rows written before Phase 7's second increment carry `local:aes-gcm:v1`, which names no particular key. Key rotation (`python -m app.admin rotate-artifact-keys`) re-encrypts a blob in place and updates only this column. The object key, size, SHA-256, and plaintext stay the same, so immutable CV versions and application packages keep referencing the same artifact. There is no schema change. Design: `docs/security.md`, "Artifact key rotation".
 
+CV fact suggestions (2026-11-16) add no table or column. They are derived on request from the encrypted `profile-source` artifact and never stored. Audit action `profile.suggestions_generated` holds counts and warning codes only. A suggestion the candidate accepts becomes an ordinary `profile_facts` row in a new profile version, with provenance `uploaded_cv` and its source line as `evidence_text`.
+
 The agent loop (2026-11-16) adds no table or column. It uses:
 
 - consent purpose `automatic_matching` in `consents`;
