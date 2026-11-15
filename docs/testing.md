@@ -253,6 +253,25 @@ The restore drill in a deployed environment (`docs/runbooks.md`, "Restore drill"
 
 A key rotation in a deployed environment (`docs/runbooks.md`, "Artifact key rotation") is manual. It has not been run yet.
 
+### CV fact suggestion tests
+
+`tests/test_cv_suggestions.py`:
+
+- **Rules.**
+  - Contact email and phone, LinkedIn link, skills, years of experience for a named skill, education level, and certification are each suggested with a verbatim source line.
+  - Visa, authorization, date of birth, salary, and gender lines are never suggested.
+  - A year range is not a phone number.
+- **Extraction.**
+  - PDF (rendered by the app's own PDF writer) and DOCX are read in the isolated process.
+  - The process environment holds no secrets.
+  - A malformed PDF, a DOCX zip bomb, and a timeout fail closed with a short code.
+- **API.**
+  - Every suggestion is `unknown` with provenance `uploaded_cv`.
+  - Skills already in the profile are flagged.
+  - Only the owner can read suggestions; another candidate gets a 404.
+  - An unreadable document returns 422.
+  - Audit metadata holds no document text.
+
 ### Greenhouse and Lever provider tests
 
 `tests/test_board_providers.py`:

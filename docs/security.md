@@ -105,6 +105,21 @@ Implemented in Phase 7, second increment (`docs/roadmap.md`, "Decision record: P
 - **Retired keys.** Remove a previous key from the deployment once `artifact-key-status` reports `previous_keys_still_needed: false`. Keep it in escrow until every backup taken before the rotation has passed the 35-day retention, because those backups hold blobs under it. `python -m app.backup verify` reports the key fingerprints each backup needs.
 - **A leaked key.** Rotation protects the live store only. Backups taken before the rotation remain readable with the leaked key. The runbook says when to delete them.
 
+### Uploaded CV parsing and fact suggestions
+
+- **The document is untrusted.** Text is extracted in a separate Python interpreter (`app/services/document_text_worker.py`) started in isolated mode:
+  - its environment holds no secrets (only `PATH`, `SYSTEMROOT`, `TEMP`, `TMP`, and `LANG`);
+  - there is a 20-second wall-clock timeout;
+  - on POSIX the address space is capped at 1 GB;
+  - at most 20 PDF pages and 200,000 characters are read;
+  - a DOCX must have a single `word/document.xml` of at most 10 MB uncompressed, checked before it is inflated, so zip bombs are refused.
+
+  The parser writes nothing to disk and fetches nothing. A failure returns only a short error code.
+- **PDF parsing uses `pypdf`** (pure Python, pinned to `>=7.0,<8`, covered by the pip-audit CI stage). DOCX parsing uses the standard library.
+- **Suggestions are proposals.** Each one is returned as `unknown` with provenance `uploaded_cv` and its source line as evidence, and has no effect until the candidate confirms it in a new profile version. Suggestions are derived again on each request and never stored.
+- **Never suggested:** lines that mention visa, work permit, authorization, sponsorship, citizenship, nationality, passport, date of birth, gender, marital status, religion, caste, disability, or salary are skipped. Work authorization comes only from the candidate's explicit entry.
+- **Audit** (`profile.suggestions_generated`) records counts and warning codes only, never document text.
+
 ### Automatic matching
 
 - The agent processes a candidate's profile only with the candidate's `automatic_matching` consent. Withdrawing the consent stops it before the next refresh.
