@@ -99,6 +99,7 @@ def upload_source_document(
         content_type=file.content_type,
         size_bytes=int(stored["size_bytes"]),
         sha256=str(stored["sha256"]),
+        encryption_key_ref=str(stored["encryption_key_ref"]),
     )
     db.add(artifact)
     record_audit(

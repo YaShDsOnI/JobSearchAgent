@@ -76,6 +76,8 @@ When an application starts, persist references to:
 
 Deleting a user must remove or irreversibly anonymize personal data according to the approved retention/legal policy while preserving only legally necessary non-identifying operational evidence.
 
+`stored_artifacts.encryption_key_ref` records the key that encrypted each blob, as `local:aes-gcm:<key fingerprint>`. Rows written before Phase 7's second increment carry `local:aes-gcm:v1`, which names no particular key. Key rotation (`python -m app.admin rotate-artifact-keys`) re-encrypts a blob in place and updates only this column. The object key, size, SHA-256, and plaintext stay the same, so immutable CV versions and application packages keep referencing the same artifact. There is no schema change. Design: `docs/security.md`, "Artifact key rotation".
+
 Backups (Phase 7) add no table. They are encrypted copies of every table and blob outside the database, kept for 35 days. Completed `profile_delete` rows in `data_requests` feed the deletion ledger, which is replayed after every restore so that deleted data does not return. Profile deletion is implemented once, in `app/services/privacy.py`, and both the API and replay use it. Restore writes `None` in a JSON column as SQL `NULL`. The application reads both forms as `None`. Design: `docs/runbooks.md`, "Backup and restore".
 
 ## Migration notes

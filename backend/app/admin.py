@@ -4,6 +4,8 @@
     python -m app.admin demote-operator --email ops@example.org --reason "role change"
     python -m app.admin list-operators
     python -m app.admin reconcile-artifacts [--apply] [--grace-minutes 60]
+    python -m app.admin artifact-key-status
+    python -m app.admin rotate-artifact-keys --reason R [--limit N]   # exit code 5 on failures
     python -m app.admin set-schedule --connector NAME (--interval-minutes N | --disable)
     python -m app.admin health-report   # exit code 3 when any source needs attention
     python -m app.admin send-health-alerts   # exit code 4 when a delivery failed
@@ -28,6 +30,7 @@ from app.core.config import get_settings
 from app.db.models import SourceConnector
 from app.db.session import SessionLocal
 from app.services.artifact_lifecycle import reconcile_artifacts
+from app.services.key_rotation import artifact_key_status, rotate_artifact_keys
 from app.services.operators import RoleChangeError, list_operators, set_user_role
 from app.services.sources.alerts import send_health_alerts
 from app.services.sources.connectors import (
@@ -60,6 +63,14 @@ def main(argv: list[str] | None = None) -> int:
     reconcile = commands.add_parser("reconcile-artifacts")
     reconcile.add_argument("--apply", action="store_true", help="Delete what is found")
     reconcile.add_argument("--grace-minutes", type=int, default=60)
+    commands.add_parser(
+        "artifact-key-status", help="Count artifacts per encryption key (IDs only)"
+    )
+    rotate = commands.add_parser(
+        "rotate-artifact-keys", help="Re-encrypt artifacts onto ARTIFACT_ENCRYPTION_KEY"
+    )
+    rotate.add_argument("--reason", required=True)
+    rotate.add_argument("--limit", type=int, help="Re-encrypt at most N artifacts this run")
     schedule = commands.add_parser("set-schedule")
     schedule.add_argument("--connector", required=True, help="Connector name")
     interval = schedule.add_mutually_exclusive_group(required=True)
@@ -192,6 +203,31 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             db.commit()
             print(json.dumps({"connector": connector.name, "enabled": connector.enabled}))
+        elif args.command == "artifact-key-status":
+            print(
+                json.dumps(
+                    artifact_key_status(db, ArtifactStorage(get_settings())), sort_keys=True
+                )
+            )
+        elif args.command == "rotate-artifact-keys":
+            if not args.reason.strip():
+                print("error: --reason must not be empty", file=sys.stderr)
+                return 1
+            if args.limit is not None and args.limit < 1:
+                print("error: --limit must be at least 1", file=sys.stderr)
+                return 1
+            storage = ArtifactStorage(get_settings())
+            rotation = rotate_artifact_keys(
+                db, storage, actor=_actor(), reason=args.reason.strip(), limit=args.limit
+            )
+            print(
+                json.dumps(
+                    {**rotation.summary(), "status": artifact_key_status(db, storage)},
+                    sort_keys=True,
+                )
+            )
+            if rotation.failures:
+                return 5
         elif args.command == "health-report":
             connectors = db.scalars(select(SourceConnector).order_by(SourceConnector.name)).all()
             health = connector_health_report(db, connectors)

@@ -8,7 +8,8 @@ One backup is a directory named `jfa-backup-<YYYYMMDDTHHMMSSZ>-<8 hex>`:
     database.enc           nonce || AES-GCM(gzip(canonical JSON of every application
                            table)), with per-table row digests inside the ciphertext.
     artifacts/<key>.bin    Each stored blob copied byte for byte. Blobs are already
-                           AES-GCM encrypted under ARTIFACT_ENCRYPTION_KEY.
+                           AES-GCM encrypted under the artifact key that wrote them
+                           (the current key, or a previous one before rotation).
 
 A directory is written as `<name>.partial` and renamed only when complete, so a crash never
 leaves something that looks like a backup. Restore goes only into an empty, migrated
@@ -27,6 +28,7 @@ import os
 import re
 import shutil
 from collections.abc import Iterable
+from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -42,9 +44,10 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session
 from sqlalchemy.types import JSON
 
+from app.core.keyring import ArtifactKeyring, decode_previous_artifact_keys
 from app.db.models import Base, DataRequest, User
 from app.services.privacy import delete_candidate_data
-from app.services.storage import ArtifactStorage, decode_artifact_key, decrypt_blob
+from app.services.storage import ArtifactStorage, decode_artifact_key
 
 FORMAT = "jobfinderagent-backup"
 FORMAT_VERSION = 1
@@ -65,7 +68,9 @@ class BackupError(Exception):
 # --- keys ------------------------------------------------------------------------------
 
 
-def decode_backup_key(value: str, *, artifact_key_value: str) -> bytes:
+def decode_backup_key(
+    value: str, *, artifact_key_value: str, previous_artifact_key_values: str = ""
+) -> bytes:
     if not value:
         raise BackupError("BACKUP_ENCRYPTION_KEY is required")
     try:
@@ -74,13 +79,26 @@ def decode_backup_key(value: str, *, artifact_key_value: str) -> bytes:
         raise BackupError("BACKUP_ENCRYPTION_KEY must be URL-safe base64") from exc
     if len(key) != 32:
         raise BackupError("BACKUP_ENCRYPTION_KEY must decode to 32 bytes")
-    try:
-        artifact_key = decode_artifact_key(artifact_key_value)
-    except RuntimeError:
-        artifact_key = b""
-    if hmac.compare_digest(key, artifact_key):
-        raise BackupError("BACKUP_ENCRYPTION_KEY must differ from ARTIFACT_ENCRYPTION_KEY")
+    artifact_keys: list[bytes] = []
+    with suppress(RuntimeError):
+        artifact_keys.append(decode_artifact_key(artifact_key_value))
+    with suppress(RuntimeError):
+        artifact_keys.extend(decode_previous_artifact_keys(previous_artifact_key_values))
+    if any(hmac.compare_digest(key, artifact_key) for artifact_key in artifact_keys):
+        raise BackupError(
+            "BACKUP_ENCRYPTION_KEY must differ from ARTIFACT_ENCRYPTION_KEY and every "
+            "ARTIFACT_PREVIOUS_ENCRYPTION_KEYS entry"
+        )
     return key
+
+
+ArtifactKeys = ArtifactKeyring | bytes | None
+
+
+def _as_keyring(keys: ArtifactKeys) -> ArtifactKeyring | None:
+    if keys is None or isinstance(keys, ArtifactKeyring):
+        return keys
+    return ArtifactKeyring(keys)
 
 
 def _subkey(key: bytes, purpose: str) -> bytes:
@@ -325,6 +343,9 @@ class VerifiedBackup:
     tables: dict[str, dict[str, Any]]
     artifacts: list[dict[str, Any]]
     artifacts_decrypted: bool
+    # Fingerprint of each artifact key the blobs needed, with a count. A restore needs every
+    # one of these keys in its key ring. Empty when blobs were not decrypted.
+    artifact_key_ids: dict[str, int] = field(default_factory=dict)
 
     def summary(self) -> dict[str, Any]:
         return {
@@ -334,12 +355,14 @@ class VerifiedBackup:
             "rows": sum(len(data["rows"]) for data in self.tables.values()),
             "artifacts": len(self.artifacts),
             "artifacts_decrypted": self.artifacts_decrypted,
+            "artifact_key_ids": self.artifact_key_ids,
         }
 
 
-def load_backup(path: Path, backup_key: bytes, *, artifact_key: bytes | None) -> VerifiedBackup:
-    """Read and fully verify a backup. With `artifact_key`, every blob is also decrypted and
-    checked against its row's plaintext SHA-256 and size."""
+def load_backup(path: Path, backup_key: bytes, *, artifact_key: ArtifactKeys) -> VerifiedBackup:
+    """Read and fully verify a backup. With `artifact_key` (a key or a key ring), every blob
+    is also decrypted and checked against its row's plaintext SHA-256 and size."""
+    keyring = _as_keyring(artifact_key)
     manifest_path = path / MANIFEST
     if not manifest_path.is_file():
         raise BackupError("not a backup directory: manifest.json is missing")
@@ -379,7 +402,7 @@ def load_backup(path: Path, backup_key: bytes, *, artifact_key: bytes | None) ->
         if _table_digest(data["columns"], data["rows"]) != data["digest"]:
             raise BackupError(f"table {name} does not match its digest")
 
-    _verify_artifacts(path, manifest["artifacts"], tables["stored_artifacts"], artifact_key)
+    key_ids = _verify_artifacts(path, manifest["artifacts"], tables["stored_artifacts"], keyring)
     return VerifiedBackup(
         path=path,
         backup_id=manifest["backup_id"],
@@ -387,7 +410,8 @@ def load_backup(path: Path, backup_key: bytes, *, artifact_key: bytes | None) ->
         alembic_revision=manifest["alembic_revision"],
         tables=tables,
         artifacts=manifest["artifacts"],
-        artifacts_decrypted=artifact_key is not None,
+        artifacts_decrypted=keyring is not None,
+        artifact_key_ids=key_ids,
     )
 
 
@@ -395,9 +419,10 @@ def _verify_artifacts(
     path: Path,
     listed: list[dict[str, Any]],
     stored_artifacts: dict[str, Any],
-    artifact_key: bytes | None,
-) -> None:
+    keyring: ArtifactKeyring | None,
+) -> dict[str, int]:
     columns = stored_artifacts["columns"]
+    key_ids: dict[str, int] = {}
     rows = {row[columns.index("object_key")]: row for row in stored_artifacts["rows"]}
     if {item["object_key"] for item in listed} != set(rows) or len(listed) != len(rows):
         raise BackupError("artifact files do not match the stored_artifacts rows")
@@ -405,20 +430,24 @@ def _verify_artifacts(
         blob_path = _inside(path / ARTIFACT_DIR, item["object_key"])
         if not blob_path.is_file() or _sha256_file(blob_path) != item["sha256"]:
             raise BackupError("an artifact file is missing or does not match the manifest")
-        if artifact_key is None:
+        if keyring is None:
             continue
         row = rows[item["object_key"]]
         try:
-            content = decrypt_blob(artifact_key, item["object_key"], blob_path.read_bytes())
+            content, ref = keyring.decrypt(item["object_key"], blob_path.read_bytes())
         except (InvalidTag, ValueError) as exc:
             raise BackupError(
-                "an artifact does not decrypt with this ARTIFACT_ENCRYPTION_KEY"
+                "an artifact does not decrypt with ARTIFACT_ENCRYPTION_KEY or any "
+                "ARTIFACT_PREVIOUS_ENCRYPTION_KEYS entry; the backup may predate a key rotation"
             ) from exc
         if (
             hashlib.sha256(content).hexdigest() != row[columns.index("sha256")]
             or len(content) != row[columns.index("size_bytes")]
         ):
             raise BackupError("a decrypted artifact does not match its recorded SHA-256 and size")
+        key_id = ref.rsplit(":", 1)[-1]
+        key_ids[key_id] = key_ids.get(key_id, 0) + 1
+    return dict(sorted(key_ids.items()))
 
 
 # --- restore ---------------------------------------------------------------------------
@@ -445,7 +474,7 @@ def restore_backup(
     storage_root: Path,
     path: Path,
     backup_key: bytes,
-    artifact_key: bytes,
+    artifact_key: ArtifactKeyring | bytes,
 ) -> RestoreResult:
     """Restore into an empty, migrated database and an empty artifact store.
 

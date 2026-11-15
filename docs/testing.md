@@ -234,6 +234,25 @@ Manual browser check (2026-11-13, Chrome on Windows, throwaway database, sandbox
 
 The restore drill in a deployed environment (`docs/runbooks.md`, "Restore drill") is manual. It has not been run yet.
 
+### Phase 7 artifact key rotation tests
+
+`tests/test_phase7_key_rotation.py` runs on SQLite and, in the `test-postgres` stage, on PostgreSQL.
+
+- **Key ring.** Fingerprints are stable, distinct per key, and are not a prefix of the key. A blob encrypted under a previous key decrypts with the ring and is refused without that key. A blob moved to another artifact ID is refused. Repeated keys, and a previous key equal to the current key, are refused. So are previous keys that do not decode or are the wrong length. The backup key must differ from every previous key.
+- **Labels and status.** New artifacts record the current key's fingerprint. Status counts current, previous, legacy (`v1`), and unknown keys, and holds no personal data.
+- **Rotation.**
+  - Every blob stays readable during rotation.
+  - Afterwards, each blob decrypts with the new key alone and not with the old one, with unchanged object key, SHA-256, and plaintext. No temporary files remain.
+  - A second run does nothing. Audit events carry counts and the reason only.
+- **Recovery and batches.** Legacy rows already under the current key are relabeled without rewriting. A blob replaced before an interrupted commit is relabeled by the next run, and the status keeps reporting the previous key as needed until then. `--limit` rotates in batches.
+- **Failures.** A missing blob, a blob under an unconfigured key, and a plaintext that does not match its row are each counted. Each artifact is left untouched, row label and blob alike.
+- **Deletion.** A row deleted after rotation listed it is skipped, and its blob is not recreated. On PostgreSQL, a profile deletion that starts during an in-flight re-encryption waits for the row lock. Afterwards neither the rows nor the blobs exist.
+- **Temporary files.** Stale rotation temp files are removed and fresh ones kept. The orphan sweep and backups never treat them as blobs.
+- **Backups across a rotation.** A pre-rotation backup verifies with the previous key, reports its fingerprint, and is refused without it. A post-rotation backup verifies with the new key alone. A pre-rotation backup restored with both keys can finish its rotation in the new environment.
+- **CLI.** `artifact-key-status` and `rotate-artifact-keys` print IDs and counts only, never keys or email addresses. `--reason` is required and must not be blank. A failure exits with code 5.
+
+A key rotation in a deployed environment (`docs/runbooks.md`, "Artifact key rotation") is manual. It has not been run yet.
+
 ### Running against PostgreSQL
 
 The suite defaults to in-memory SQLite. Set `TEST_DATABASE_URL` to a **disposable** PostgreSQL database, for example `postgresql+psycopg://<user>:<password>@127.0.0.1:<port>/<db>`. In that mode the test run:

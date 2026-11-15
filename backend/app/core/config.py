@@ -4,6 +4,8 @@ from urllib.parse import urlsplit
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.keyring import ArtifactKeyring
+
 
 class Settings(BaseSettings):
     app_name: str = "JobFinderAgent"
@@ -21,6 +23,12 @@ class Settings(BaseSettings):
         default="./data/artifacts", validation_alias="ARTIFACT_STORAGE_PATH"
     )
     artifact_encryption_key: str = Field(default="", validation_alias="ARTIFACT_ENCRYPTION_KEY")
+    # Earlier artifact keys, comma-separated, kept only so blobs written under them stay
+    # readable until `python -m app.admin rotate-artifact-keys` re-encrypts them. New blobs
+    # always use ARTIFACT_ENCRYPTION_KEY. Runbook: docs/runbooks.md, "Artifact key rotation".
+    artifact_previous_encryption_keys: str = Field(
+        default="", validation_alias="ARTIFACT_PREVIOUS_ENCRYPTION_KEYS"
+    )
     # Encrypts backup database dumps (`python -m app.backup`). Read only by the backup CLI,
     # never by the API or workers. It must differ from ARTIFACT_ENCRYPTION_KEY and is kept
     # apart from the backups themselves (see docs/runbooks.md, "Backup").
@@ -112,6 +120,11 @@ class Settings(BaseSettings):
             )
         if self.artifact_encryption_key == "":
             raise RuntimeError("ARTIFACT_ENCRYPTION_KEY is required")
+        if self.artifact_previous_encryption_keys.strip():
+            # Decodes every key and refuses repeats, including the current key.
+            ArtifactKeyring.from_values(
+                self.artifact_encryption_key, self.artifact_previous_encryption_keys
+            )
         if self.source_network_access_enabled and not self.source_egress_allowlist_entries:
             raise RuntimeError(
                 "SOURCE_EGRESS_ALLOWLIST must list hosts when SOURCE_NETWORK_ACCESS_ENABLED is true"

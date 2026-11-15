@@ -13,6 +13,8 @@ x-backend-env: &backend-env
   COOKIE_SECURE: ${COOKIE_SECURE:-true}
   CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost}
   ARTIFACT_ENCRYPTION_KEY: ${ARTIFACT_ENCRYPTION_KEY:-}
+  # Set only during a key rotation (docs/runbooks.md, "Artifact key rotation").
+  ARTIFACT_PREVIOUS_ENCRYPTION_KEYS: ${ARTIFACT_PREVIOUS_ENCRYPTION_KEYS:-}
   ARTIFACT_STORAGE_PATH: /data/artifacts
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
   SOURCE_NETWORK_ACCESS_ENABLED: ${SOURCE_NETWORK_ACCESS_ENABLED:-false}

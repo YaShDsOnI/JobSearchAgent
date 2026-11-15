@@ -1,6 +1,6 @@
 # Operations runbooks
 
-Status: Phase 7 (private beta hardening), first increment, 2026-11-14. Decision record: `docs/roadmap.md`, "Decision record: Phase 7 first increment (2026-11-14)".
+Status: Phase 7 (private beta hardening). First increment 2026-11-14 (backup, restore, incident runbooks). Second increment 2026-11-15 (artifact key rotation). Decision records: `docs/roadmap.md`, "Decision record: Phase 7 first increment (2026-11-14)" and "Decision record: Phase 7 second increment (2026-11-15)".
 
 These runbooks cover the reference deployment in `compose.yaml`. Every command below exists in this repository. Where a step needs something the repository does not provide yet, the runbook says so instead of describing a procedure that does not exist.
 
@@ -18,7 +18,7 @@ General rules for every incident:
 `python -m app.backup create` writes one directory, `jfa-backup-<UTC time>-<id>`:
 
 - `database.enc`: every application table, compressed and encrypted with AES-GCM under a key derived from `BACKUP_ENCRYPTION_KEY`. Per-table row digests are inside the ciphertext.
-- `artifacts/`: every blob referenced by `stored_artifacts`, copied byte for byte. Blobs are already encrypted under `ARTIFACT_ENCRYPTION_KEY`.
+- `artifacts/`: every blob referenced by `stored_artifacts`, copied byte for byte. Blobs are already encrypted under the artifact key that wrote them. Before a key rotation, that is the previous key.
 - `manifest.json`: format, backup ID, time, schema revision, and the SHA-256 of every file. It holds no personal data and is MAC'd, so any edit is detected.
 
 The database is read in one `REPEATABLE READ` transaction, which gives one consistent snapshot. The directory is written as `.partial` and renamed only when complete. If a referenced blob is missing, the backup fails. Run `python -m app.admin reconcile-artifacts` and investigate before retrying.
@@ -29,8 +29,9 @@ The database is read in one `REPEATABLE READ` transaction, which gives one consi
 |---|---|---|---|
 | `BACKUP_ENCRYPTION_KEY` | Backup CLI only. Never set on the API, worker, scheduler, or runner. | Yes | In the secret manager, never next to the backups |
 | `ARTIFACT_ENCRYPTION_KEY` | App and backup CLI | Yes. Blobs stay encrypted under it. | In the secret manager, never next to the backups |
+| `ARTIFACT_PREVIOUS_ENCRYPTION_KEYS` | App and backup CLI, during a rotation only | Only for backups taken before the rotation. `verify` lists the key fingerprints a backup needs. | Retired keys stay in escrow, labeled with their fingerprint, until every backup that needs them has been pruned. |
 
-Generate a backup key with `python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"`. It must decode to 32 bytes and differ from the artifact key; the CLI refuses otherwise. Losing either key makes every backup unrecoverable. Escrow both keys before the first backup.
+Generate a backup key with `python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"`. It must decode to 32 bytes and differ from every artifact key, current and previous; the CLI refuses otherwise. Losing either key makes every backup unrecoverable. Escrow both keys before the first backup.
 
 ### Schedule (reference deployment)
 
@@ -64,9 +65,9 @@ Restore only into a new, empty environment, never over a live one.
 1. Contain the failed environment: stop its API, worker, scheduler, and runner so nothing writes to it.
 2. Provision a new PostgreSQL database and an empty artifact volume. Use the release whose code matches the backup's `alembic_revision`, which `verify` prints.
 3. Migrate the empty database to that revision: `python -m alembic upgrade <revision>`.
-4. Verify the backup in the new environment: `python -m app.backup verify --backup DIR`. This decrypts every blob with the artifact key and checks its plaintext SHA-256 and size against its row.
+4. Verify the backup in the new environment: `python -m app.backup verify --backup DIR`. This decrypts every blob with the configured artifact keys and checks its plaintext SHA-256 and size against its row. If it fails with "the backup may predate a key rotation", take the retired key from escrow and set it in `ARTIFACT_PREVIOUS_ENCRYPTION_KEYS` for the restore. `artifact_key_ids` in the output lists the key fingerprints the backup needs.
 5. Restore with the latest ledger: `python -m app.backup restore --backup DIR --ledger FILE`, with `DATABASE_URL` and `ARTIFACT_STORAGE_PATH` pointing at the new environment. Restore refuses a non-empty database, a non-empty artifact store, or a different schema revision. It reads every table back inside the transaction and commits only an exact copy. On any failure it removes the blobs it copied. Deletion replay runs right after the commit, and the result is recorded in a `backup.restored` audit event.
-6. Run `python -m app.admin reconcile-artifacts` (dry run). It must report no missing files.
+6. Run `python -m app.admin reconcile-artifacts` (dry run). It must report no missing files. If `python -m app.admin artifact-key-status` reports `previous_keys_still_needed: true`, finish the rotation now ("Artifact key rotation", steps 4 to 7).
 7. Keep the kill switches closed (`SOURCE_NETWORK_ACCESS_ENABLED=false`, `APPLICATION_SUBMISSION_ENABLED=false`, destination disabled) until a smoke check passes, then reopen them deliberately.
 8. Rotate `SESSION_SECRET` if the old environment may have been compromised. Candidates then sign in again.
 
@@ -82,6 +83,21 @@ Restore the latest verified backup into a throwaway environment, following steps
 
 Record the date, backup ID, duration, and result. A drill that fails is an incident.
 
+## Artifact key rotation
+
+Rotate `ARTIFACT_ENCRYPTION_KEY` on a schedule the product owner sets (for example yearly), when someone with key access leaves, and at once if the key may have leaked. Rotation re-encrypts each blob in place. It changes neither the content, nor its SHA-256, nor any record that references it.
+
+1. **Generate and escrow the new key.** Use `python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"`. Store it in the secret manager and in escrow before using it.
+2. **Switch every service at once.** In `.env`, set `ARTIFACT_PREVIOUS_ENCRYPTION_KEYS` to the old key and `ARTIFACT_ENCRYPTION_KEY` to the new one. Then recreate every service that reads artifacts: `docker compose --profile app up -d --force-recreate`. The `backup` service reads the same `.env`. A service still on the old settings cannot read blobs written under the new key.
+   - Without downtime (rolling restarts), use two deployments. First add the new key to `ARTIFACT_PREVIOUS_ENCRYPTION_KEYS` everywhere, so every service can read both keys. Then swap the two keys.
+3. **Record the fingerprints.** `python -m app.admin artifact-key-status` prints `current_key_id` and `previous_key_ids`. Label the escrowed keys with them.
+4. **Re-encrypt.** Run `python -m app.admin rotate-artifact-keys --reason "<ticket>"`. Use `--limit N` to spread the work over several runs. The command is idempotent and safe to interrupt, so rerun it until `status.previous_keys_still_needed` is `false`.
+   - **Exit code 5** means some artifacts could not be rotated and were left untouched. `missing_blob`: run `python -m app.admin reconcile-artifacts` and treat it as an integrity incident. `undecryptable`: the blob is under a key this deployment does not hold; find it in escrow. `integrity_mismatch`: the plaintext does not match its recorded hash; treat it as an incident. `write_failed`: check disk space and permissions, then rerun.
+   - `unknown_key` in the status output names rows labeled with a key that is not configured. That key is needed to read them.
+5. **Back up.** Take and verify a new backup ("Schedule"). `verify` must list only the new fingerprint in `artifact_key_ids`.
+6. **Retire the old key.** Remove it from `ARTIFACT_PREVIOUS_ENCRYPTION_KEYS` and recreate the services. Keep it in escrow until every backup taken before step 5 has been pruned (35 days). Then destroy it.
+7. **Record.** Note the date, both fingerprints, the counts from step 4, and the backup ID from step 5. The `artifacts.keys_rotated` audit events hold the counts and the reason.
+
 ## Leaked secret or token
 
 | Leaked | Contain | Rotate | Notes |
@@ -91,7 +107,7 @@ Record the date, backup ID, duration, and result. A drill that fails is an incid
 | Connector credential (`file:<name>`) | `python -m app.admin set-connector-enabled --connector N --disable --reason R` | Replace the file in `SECRETS_DIR`, then revoke the old credential with the provider. | Phase 5B's Ashby provider uses no credential. |
 | Alert webhook URL | Revoke it at the receiver. | Replace the `ALERT_WEBHOOK_REF` file. | — |
 | `BACKUP_ENCRYPTION_KEY` | Treat every backup as exposed and restrict access to backup storage. | Generate a new key. Take and verify a new backup with a new ledger file (`create --ledger NEW`). The live database records every deletion, including replayed ones, so the new ledger is complete. Then delete the old backups and the old ledger. | — |
-| `ARTIFACT_ENCRYPTION_KEY` | Restrict access to the artifact volume and backups. | **Gap:** there is no re-encryption tool yet. The `encryption_key_ref` column exists for it. Until one exists, escalate to the product owner. | Blobs in backups stay readable with the old key. |
+| `ARTIFACT_ENCRYPTION_KEY` | Restrict access to the artifact volume and backups. | Rotate at once ("Artifact key rotation"). Then destroy the leaked key rather than escrowing it, unless a restore from an older backup may still be needed. | Rotation protects the live store only. Backups taken before step 5 stay readable with the leaked key. If backup storage may also be exposed, delete those backups and their off-site copies after step 5. This gives up their restore points, so the product owner decides. |
 | Database credentials | Change the PostgreSQL password and update `POSTGRES_PASSWORD`. | — | Review `audit_events` for unexpected actors. |
 
 After any leak, review `audit_events` around the exposure window (role changes, connector and destination switches, deletions, backups) and record the findings.

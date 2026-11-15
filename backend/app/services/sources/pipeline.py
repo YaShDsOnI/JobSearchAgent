@@ -850,6 +850,7 @@ def _create_snapshot(
         content_type="application/json",
         size_bytes=int(artifact_data["size_bytes"]),
         sha256=str(artifact_data["sha256"]),
+        encryption_key_ref=str(artifact_data["encryption_key_ref"]),
     )
     db.add(artifact)
     # No ORM relationship links these rows, so flush the artifact first; otherwise the
