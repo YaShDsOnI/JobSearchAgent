@@ -180,6 +180,28 @@ Acceptance criteria:
 - Deletion/export and incident exercises complete successfully.
 - Legal review confirms the intended launch jurisdictions and disclosures.
 
+### Decision record: Phase 7 first increment (2026-11-14)
+
+On 2026-11-14 the product owner asked to proceed past Phase 6 and chose delivery on a branch with a PR. They did not choose among the proposed Phase 7 work items. This increment therefore takes only the items that change no access, add no table, and send nothing anywhere:
+
+- **Backup and restore** (`python -m app.backup`, `docs/runbooks.md`, "Backup and restore"):
+  - Encrypted, verifiable backups of every application table and stored blob, under a separate `BACKUP_ENCRYPTION_KEY` used only by the backup CLI.
+  - Restore only into an empty, migrated target at the same schema revision.
+  - **Deletion replay** after every restore, from a MAC'd, add-only deletion ledger.
+  - **35-day backup retention** that always keeps the newest backup.
+- **Incident runbooks** (`docs/runbooks.md`) for a leaked secret, an unintended submission, a source-policy violation, a model provider incident, a data export failure, and deletion verification.
+
+Stored-data change: none in the database. Backups and the ledger are new copies of existing data outside the database (see `docs/security.md`, "Backups"). The ledger holds only data request IDs, user IDs, and completion times.
+
+Deferred until the product owner explicitly approves them:
+
+- support access controls (a new role and new audit events, so a security and privacy change);
+- pilot metrics and cost budgets;
+- off-site backup replication (the target must be approved for personal data);
+- artifact key rotation and re-encryption.
+
+The pilot itself, its quality and safety thresholds, and legal review are the product owner's to run.
+
 ## Phase 8 — expansion only by evidence
 
 Add connectors one at a time after policy review, fixtures, terms/authorization, rate limits, observability, and rollback. Consider additional models, vector retrieval, multilingual support, and more ATS adapters only when the simpler design fails a measured need.
@@ -223,6 +245,37 @@ Acceptance criteria evidence (`docs/testing.md`, "Phase 6 sandbox adapter tests"
 
 Not done, and needing a new approval: any real destination, submission from a deployed environment (the runner has no deployment image yet), and batch or unattended submission.
 
+## Phase 7 implementation note (2026-11-14)
+
+Implemented under "Decision record: Phase 7 first increment (2026-11-14)":
+
+- `backend/app/services/backup.py`, `backend/app/backup.py`, and the `backup` service (profile `ops`) in `compose.yaml`.
+- `backend/app/services/privacy.py`: profile deletion moved out of the API route unchanged, so deletion replay runs exactly the same code.
+- `docs/runbooks.md`.
+
+Evidence (`docs/testing.md`, "Phase 7 backup and restore tests"):
+
+- A restore reproduces every table's row digest and every blob's plaintext.
+- Tampering, wrong keys, and missing blobs are detected.
+- Non-empty targets and schema mismatches are refused.
+- A failed restore leaves nothing behind.
+- Deletion replay removes data deleted after the backup, is idempotent, and keeps data created after the deletion.
+
+Phase 7 acceptance status:
+
+- Deletion and export exercises can now be run with the restore drill, but have not yet been run in a deployed environment.
+- Incident runbooks exist; no incident exercise has been run yet.
+- No critical security or privacy issue is known to be open.
+- The pilot and legal review have not started.
+
 ## Recommended next implementation phase
 
-Phase 5B is implemented: the read-only Ashby public Job Posting API is registered as the only live provider, covered by sanitized contract fixtures, and validated by a live read-only smoke test (see `docs/testing.md`). Live access stays disabled by default. The remaining deployment prerequisites above must be met before network access is turned on in any deployed environment. Phase 5C is implemented: an immutable, hashed review package per job with a live binding check, candidate approval (24-hour expiry), and a link-out destination. Nothing is sent. Evidence is in `docs/testing.md`. The live-access deployment controls (decision record above) implement the mechanisms for the remaining prerequisites; a real deployed environment still has to run and verify them. The next step is Phase 6, one permitted application destination (submission adapter). It needs its own written authorization for a specific destination and a new product-owner approval before work starts. Do not add further live providers or implement application submission or browser automation without that approval.
+Phases 1 to 6 are implemented (see the notes above). Live access stays disabled by default, and the only application destination is the local sandbox ATS.
+
+Phase 7 is in progress. Backup and restore with deletion replay, and the incident runbooks, are implemented. Next:
+
+1. Run the restore drill and one incident exercise in a real deployed environment, and record the results.
+2. Get product-owner approval for the deferred Phase 7 items: support access controls, pilot metrics and cost budgets, off-site backup replication, and artifact key rotation.
+3. The product owner runs the pilot recruitment, sets the quality and safety thresholds, and arranges legal review.
+
+Do not add a real application destination, further live providers, scraping, model calls, or unattended or batch submission without a new approval.

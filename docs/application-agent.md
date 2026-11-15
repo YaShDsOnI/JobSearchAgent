@@ -193,7 +193,7 @@ Each entry in `tracked_applications` has a company, role, optional location and 
 |---|---|---|
 | `link_out` | `POST /applications/{id}/applied` after the candidate applied on the employer's site themselves | The application, and the package revision and `review_hash` current at that moment. Company, role, location, and link are copied from that package. |
 | `external` | `POST /tracker` for an application made outside JobFinderAgent | Nothing; every field is entered by the candidate |
-| `sandbox_adapter` | Reserved for the Phase 6 sandbox adapter's verified submissions | Added with the adapter |
+| `sandbox_adapter` | The Phase 6 sandbox adapter, when a submission is verified (`submitted`) | The application, the package and its `review_hash`, and the sandbox destination URL. Company, role, and location are copied from the package. |
 
 `link_out` entries are candidate-reported. The design allows candidate-supplied evidence as verification (see "Verification and duplicate protection"). The UI labels them "you applied on the employer's site". The bound package records what was *prepared* for that job. JobFinderAgent cannot see what the candidate actually entered on the employer's site, and does not claim to.
 

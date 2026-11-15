@@ -62,6 +62,10 @@ The only destination is the local sandbox ATS, a dummy employer site in this rep
 
 In the app, prepare and approve a sandbox job's package, choose "Fill the sandbox form for review", check what was filled, then confirm. Design: `../docs/application-agent.md`, "Phase 6: sandbox browser adapter".
 
+## Backup and restore (Phase 7)
+
+`python -m app.backup create --out-root DIR --ledger FILE`, then `verify`, `restore`, `update-ledger`, `replay-deletions`, and `prune`. These need `BACKUP_ENCRYPTION_KEY` (32 bytes, URL-safe base64, different from the artifact key). In the reference deployment, run `docker compose --profile ops run --rm backup ...`. Runbook: `../docs/runbooks.md`, "Backup and restore".
+
 ## Reference deployment
 
 `docker compose --profile app up --build` (from the repository root) runs migrations, the API (on `127.0.0.1:8000`), a continuous worker and scheduler, and the egress proxy. The worker and scheduler sit on an internal network whose only route out is the proxy. Put `POSTGRES_PASSWORD`, `SESSION_SECRET`, `ARTIFACT_ENCRYPTION_KEY`, and any `SOURCE_*` and `ALERT_*` settings in a root `.env` (never committed). Put secret files in `deploy/secrets/` (git-ignored), or point `SECRETS_HOST_DIR` elsewhere. Before enabling network access in any deployed environment, run `deploy/egress-proxy/verify.py` there (see `../docs/testing.md`). Design: `../docs/source-connectors.md`, "Deployment enforcement".

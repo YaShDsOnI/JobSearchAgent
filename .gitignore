@@ -30,3 +30,6 @@ tmp_*
 # Secret files for the reference deployment (file:<name> references)
 deploy/secrets/*
 !deploy/secrets/README.md
+
+# Local backups from `docker compose --profile ops run --rm backup` (encrypted personal data)
+backups/

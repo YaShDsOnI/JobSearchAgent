@@ -1,20 +1,16 @@
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user, require_csrf
 from app.core.config import get_settings
 from app.db.models import (
-    Application,
     CandidateProfile,
     Consent,
     CVClaim,
     CVVersion,
-    DataRequest,
-    MatchReview,
-    MatchRun,
     PreferenceVersion,
     ProfileFact,
     ProfileVersion,
@@ -32,11 +28,12 @@ from app.schemas import (
     ProfileVersionCreate,
     ProfileVersionResponse,
 )
-from app.services.applications import delete_applications, export_applications
+from app.services.applications import export_applications
 from app.services.audit import record_audit
 from app.services.cv_invalidation import supersede_cv_versions
+from app.services.privacy import delete_candidate_data
 from app.services.storage import ArtifactStorage
-from app.services.tracker import delete_all_entries, export_entries
+from app.services.tracker import export_entries
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 
@@ -376,69 +373,11 @@ def delete_profile(
     db: Session = Depends(get_db),
 ):
     require_csrf(request)
-    storage = artifact_storage()
-    # The tracker records where the candidate applied: personal data, deleted with the profile.
-    tracker_count = delete_all_entries(db, user.id)
-    # Packages embed profile-derived answers and reference CVs: delete them first.
-    application_count = delete_applications(
+    data_request = delete_candidate_data(
         db,
-        application_ids=list(
-            db.scalars(select(Application.id).where(Application.user_id == user.id)).all()
-        ),
-    )
-    db.execute(
-        delete(CVClaim).where(
-            CVClaim.cv_version_id.in_(select(CVVersion.id).where(CVVersion.user_id == user.id))
-        )
-    )
-    db.execute(delete(CVVersion).where(CVVersion.user_id == user.id))
-    artifacts = db.scalars(
-        select(StoredArtifact).where(StoredArtifact.owner_user_id == user.id)
-    ).all()
-    for artifact in artifacts:
-        storage.delete(artifact.object_key)
-    db.execute(delete(StoredArtifact).where(StoredArtifact.owner_user_id == user.id))
-    profile_versions = db.scalars(
-        select(ProfileVersion).where(ProfileVersion.user_id == user.id)
-    ).all()
-    for version in profile_versions:
-        version.source_document_id = None
-        version.summary = None
-        version.normalized_json = {}
-        version.status = "deleted"
-        version.deleted_at = datetime.now(UTC)
-        db.execute(delete(ProfileFact).where(ProfileFact.profile_version_id == version.id))
-    preferences = db.scalars(
-        select(PreferenceVersion).where(PreferenceVersion.user_id == user.id)
-    ).all()
-    for preference in preferences:
-        preference.rules_json = {}
-        preference.status = "deleted"
-        preference.deleted_at = datetime.now(UTC)
-    profile = db.get(CandidateProfile, user.id)
-    if profile:
-        profile.current_version_id = None
-    db.execute(delete(MatchReview).where(MatchReview.user_id == user.id))
-    db.execute(delete(MatchRun).where(MatchRun.user_id == user.id))
-    data_request = DataRequest(
-        user_id=user.id,
-        request_type="profile_delete",
-        status="completed",
-        completed_at=datetime.now(UTC),
-    )
-    db.add(data_request)
-    record_audit(
-        db,
-        action="profile.deleted",
+        artifact_storage(),
+        user.id,
         actor="user",
-        user_id=user.id,
-        object_type="data_request",
-        object_id=data_request.id,
-        metadata={
-            "artifact_count": len(artifacts),
-            "application_count": application_count,
-            "tracker_count": tracker_count,
-        },
         request_id=request.state.request_id,
     )
     db.commit()

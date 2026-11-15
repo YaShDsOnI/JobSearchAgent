@@ -76,6 +76,8 @@ When an application starts, persist references to:
 
 Deleting a user must remove or irreversibly anonymize personal data according to the approved retention/legal policy while preserving only legally necessary non-identifying operational evidence.
 
+Backups (Phase 7) add no table. They are encrypted copies of every table and blob outside the database, kept for 35 days. Completed `profile_delete` rows in `data_requests` feed the deletion ledger, which is replayed after every restore so that deleted data does not return. Profile deletion is implemented once, in `app/services/privacy.py`, and both the API and replay use it. Restore writes `None` in a JSON column as SQL `NULL`. The application reads both forms as `None`. Design: `docs/runbooks.md`, "Backup and restore".
+
 ## Migration notes
 
 - Revision IDs longer than Alembic's default `VARCHAR(32)` version column already exist and are never renamed. `migrations/env.py` creates or widens `alembic_version.version_num` to `VARCHAR(255)` on non-SQLite databases before migrating. Before this fix, the chain could not be applied to PostgreSQL at all.
