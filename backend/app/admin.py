@@ -11,6 +11,10 @@
     python -m app.admin send-health-alerts   # exit code 4 when a delivery failed
     python -m app.admin register-ashby --name N --board B --employer E --basis official_api \
         --evidence-ref REF --reviewed-by WHO --terms-version V [--approve] [--owner-email X]
+    python -m app.admin register-greenhouse --name N --board TOKEN --employer E --basis B \
+        --evidence-ref REF --reviewed-by WHO --terms-version V [--careers-host H] [--approve]
+    python -m app.admin register-lever --name N --site SITE --employer E --basis B \
+        --evidence-ref REF --reviewed-by WHO --terms-version V [--region eu] [--approve]
     python -m app.admin set-connector-enabled --connector N (--enable | --disable) --reason R
     python -m app.admin register-sandbox     # sandbox ATS jobs + destination (disabled)
     python -m app.admin set-destination-enabled --destination sandbox_ats (--enable | --disable) \
@@ -36,6 +40,8 @@ from app.services.sources.alerts import send_health_alerts
 from app.services.sources.connectors import (
     ConnectorRegistrationError,
     register_ashby_connector,
+    register_greenhouse_connector,
+    register_lever_connector,
     set_connector_enabled,
 )
 from app.services.sources.health import connector_health_report
@@ -85,6 +91,18 @@ def main(argv: list[str] | None = None) -> int:
     ashby.add_argument("--owner-email")
     ashby.add_argument("--no-compensation", action="store_true")
     ashby.add_argument("--approve", action="store_true", help="Record policy approval")
+    for board_command, board_flag in (("register-greenhouse", "--board"),
+                                      ("register-lever", "--site")):
+        board_parser = commands.add_parser(board_command)
+        for flag in ("--name", board_flag, "--employer", "--basis", "--evidence-ref",
+                     "--reviewed-by", "--terms-version"):
+            board_parser.add_argument(flag, required=True)
+        board_parser.add_argument("--owner-email")
+        board_parser.add_argument("--approve", action="store_true", help="Record policy approval")
+        if board_command == "register-greenhouse":
+            board_parser.add_argument("--careers-host")
+        else:
+            board_parser.add_argument("--region", choices=["global", "eu"], default="global")
     toggle = commands.add_parser("set-connector-enabled")
     toggle.add_argument("--connector", required=True)
     state = toggle.add_mutually_exclusive_group(required=True)
@@ -166,6 +184,35 @@ def main(argv: list[str] | None = None) -> int:
             db.commit()
             print(json.dumps({"connector_id": connector.id, "name": connector.name,
                               "enabled": connector.enabled,
+                              "policy_status": connector.policy_status}))
+        elif args.command in {"register-greenhouse", "register-lever"}:
+            common = {
+                "name": args.name,
+                "employer_name": args.employer,
+                "basis": args.basis,
+                "evidence_ref": args.evidence_ref,
+                "reviewed_by": args.reviewed_by,
+                "terms_version": args.terms_version,
+                "owner_email": args.owner_email,
+                "approve": args.approve,
+                "actor": _actor(),
+            }
+            try:
+                if args.command == "register-greenhouse":
+                    connector = register_greenhouse_connector(
+                        db, board_token=args.board, careers_host=args.careers_host, **common
+                    )
+                else:
+                    connector = register_lever_connector(
+                        db, site=args.site, region=args.region, **common
+                    )
+            except ConnectorRegistrationError as exc:
+                db.rollback()
+                print(f"error: {exc}", file=sys.stderr)
+                return 1
+            db.commit()
+            print(json.dumps({"connector_id": connector.id, "name": connector.name,
+                              "kind": connector.kind, "enabled": connector.enabled,
                               "policy_status": connector.policy_status}))
         elif args.command == "register-sandbox":
             summary = register_sandbox(

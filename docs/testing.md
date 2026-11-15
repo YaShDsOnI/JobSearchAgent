@@ -253,6 +253,28 @@ The restore drill in a deployed environment (`docs/runbooks.md`, "Restore drill"
 
 A key rotation in a deployed environment (`docs/runbooks.md`, "Artifact key rotation") is manual. It has not been run yet.
 
+### Greenhouse and Lever provider tests
+
+`tests/test_board_providers.py`:
+
+- **Mapping.**
+  - Only explicit fields are mapped.
+  - Greenhouse work mode comes only from a leading "Remote" or a "Hybrid" word, and the country is never set.
+  - A Lever country is used only for on-site and hybrid roles.
+  - Incomplete salary ranges stay unknown.
+  - HTML content is reduced to text without scripts or links.
+  - Invalid identifiers are rejected, as is a hosted URL that disagrees with the ID.
+- **Binding.** Every change to the fetch host, path, URL hosts, board or site, or region, and any credential, fails with `connector_misconfigured`. Registration validates the basis, the careers host, and the region, and starts disabled.
+- **Kill switch.** Both providers are blocked with no request made while network access is disabled.
+- **Pipeline.**
+  - Valid jobs are ingested and malformed ones rejected per record.
+  - Exactly one anonymous GET reaches the bound endpoint.
+  - A careers-domain URL is accepted only with a reviewed careers host.
+  - A Greenhouse listing whose `meta.total` disagrees never marks jobs stale.
+  - Lever list sections feed the text extractor, so "Requirements" items are required, "Nice to have" items preferred, and closing text informational.
+  - Reruns are idempotent.
+- **CLI.** `register-greenhouse` and `register-lever` create disabled connectors and refuse duplicates.
+
 ### Agent loop tests
 
 `tests/test_agent_loop.py`:
