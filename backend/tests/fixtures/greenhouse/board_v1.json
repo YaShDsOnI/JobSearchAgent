@@ -1,0 +1,64 @@
+{
+  "jobs": [
+    {
+      "id": 4100001,
+      "internal_job_id": 900001,
+      "title": "Backend Engineer",
+      "updated_at": "2026-10-20T09:00:00-04:00",
+      "first_published": "2026-10-01T08:00:00-04:00",
+      "requisition_id": "REQ-1",
+      "location": {"name": "Remote - India"},
+      "absolute_url": "https://job-boards.greenhouse.io/exampleco/jobs/4100001",
+      "metadata": null,
+      "content": "&lt;p&gt;We build payments software.&lt;/p&gt;&lt;h3&gt;Requirements&lt;/h3&gt;&lt;ul&gt;&lt;li&gt;4+ years of experience with Python.&lt;/li&gt;&lt;li&gt;Strong PostgreSQL skills.&lt;/li&gt;&lt;/ul&gt;&lt;h3&gt;Nice to have&lt;/h3&gt;&lt;ul&gt;&lt;li&gt;Kubernetes is a plus.&lt;/li&gt;&lt;/ul&gt;&lt;script&gt;steal()&lt;/script&gt;&lt;p&gt;Apply at &lt;a href=&quot;https://evil.test/x&quot;&gt;this link&lt;/a&gt;.&lt;/p&gt;",
+      "departments": [{"id": 1, "name": "Engineering"}],
+      "offices": [{"id": 10, "name": "Bengaluru", "location": "Bengaluru, Karnataka, India"}]
+    },
+    {
+      "id": "4100002",
+      "title": "Data Analyst",
+      "updated_at": "2026-10-21T09:00:00Z",
+      "location": {"name": "Hybrid - Pune"},
+      "absolute_url": "https://boards.greenhouse.io/exampleco/jobs/4100002",
+      "content": "&lt;p&gt;You must have SQL experience. Familiarity with Tableau.&lt;/p&gt;",
+      "offices": []
+    },
+    {
+      "id": 4100003,
+      "title": "Office Manager",
+      "location": {"name": "Ahmedabad, India"},
+      "absolute_url": "https://careers.example-co.test/jobs/4100003",
+      "content": "&lt;p&gt;Run our office.&lt;/p&gt;"
+    },
+    {
+      "id": 4100004,
+      "title": "",
+      "location": {"name": "Remote"},
+      "absolute_url": "https://job-boards.greenhouse.io/exampleco/jobs/4100004",
+      "content": "&lt;p&gt;No title.&lt;/p&gt;"
+    },
+    {
+      "id": -5,
+      "title": "Negative Identifier",
+      "location": {"name": "Remote"},
+      "absolute_url": "https://job-boards.greenhouse.io/exampleco/jobs/5",
+      "content": "&lt;p&gt;Invalid id.&lt;/p&gt;"
+    },
+    {
+      "id": 4100006,
+      "title": "Wrong Host Role",
+      "location": {"name": "Remote"},
+      "absolute_url": "https://unrelated.example.test/jobs/4100006",
+      "content": "&lt;p&gt;Links somewhere else.&lt;/p&gt;"
+    },
+    {
+      "id": 4100001,
+      "title": "Backend Engineer (duplicate)",
+      "location": {"name": "Remote - India"},
+      "absolute_url": "https://job-boards.greenhouse.io/exampleco/jobs/4100001",
+      "content": "&lt;p&gt;Duplicate.&lt;/p&gt;"
+    },
+    "not-an-object"
+  ],
+  "meta": {"total": 8}
+}

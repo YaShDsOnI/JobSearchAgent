@@ -1,6 +1,6 @@
 # Source connectors and job discovery pipeline
 
-Status: Phase 5B (2026-09-30). Registered providers: the bundled fixture and one reviewed live provider, `ashby_job_board` (Ashby's public posting API, read-only). Live access stays disabled by default and requires a per-deployment allowlist plus a per-connector authorization record. No live fetch happens unless a deployment explicitly enables it. Scraping, browser automation, and application submission are not implemented.
+Status: agent build-out program (2026-11-16). Registered providers: the bundled fixture and three reviewed live providers, all read-only public ATS job-board APIs: `ashby_job_board` (Phase 5B), `greenhouse_job_board`, and `lever_postings`. Live access stays disabled by default and requires a per-deployment allowlist plus a per-connector authorization record. No live fetch happens unless a deployment explicitly enables it. Scraping, browser automation, and application submission are not implemented.
 
 ## Purpose
 
@@ -236,6 +236,103 @@ Anything else fails the run with `connector_misconfigured`. The deployment allow
 - Fixtures: `backend/tests/fixtures/ashby/board_v1.json` (sanitized, fabricated) in the documented shape.
 - Tests: `backend/tests/test_phase5b_ashby.py`, run through `httpx.MockTransport` with no network.
 - The live smoke test is recorded in `docs/testing.md`.
+
+### `greenhouse_job_board` (Greenhouse public Job Board API, 2026-11-16)
+
+Implementation: `backend/app/services/sources/greenhouse.py`. Approved under "Decision record: agent build-out program (2026-11-16)" in `docs/roadmap.md`.
+
+**Endpoint.** The documented public Job Board API, listing only:
+
+```
+GET https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs?content=true
+```
+
+Reference: <https://developers.greenhouse.io/job-board.html>.
+
+- The request is anonymous and read-only.
+- The application endpoint of the same API needs the employer's own API key and is never used. Any credential configuration is rejected.
+- There is no page scraping, and no Harvest or other private API is used.
+
+**Authorization basis.**
+
+- The basis is `official_api` or `explicit_authorization`.
+- Greenhouse publishes the API so that employers can show their job boards. Each board therefore needs its own authorization record (evidence, reviewer, terms version) before an operator approves and enables it.
+- Register with `python -m app.admin register-greenhouse --name N --board TOKEN --employer E --basis official_api --evidence-ref REF --reviewed-by WHO --terms-version V [--careers-host H] [--approve]`. The connector starts disabled.
+
+**Endpoint binding.** The config must be exactly:
+
+- `fetch_hosts = ["boards-api.greenhouse.io"]`;
+- `fetch_path_prefixes = ["/v1/boards/<board>/jobs"]`;
+- `allowed_url_hosts = ["boards.greenhouse.io", "job-boards.greenhouse.io"]`, plus at most one reviewed `--careers-host` for boards whose postings link to the employer's own domain.
+
+A posting that links anywhere else is rejected per record.
+
+**Field mapping.** Explicit fields only.
+
+| Normalized field | Greenhouse source | Rule |
+|---|---|---|
+| `source_job_id` | `id` | a positive integer or digit string; anything else rejects the record |
+| `title` | `title` | required |
+| `employer` | connector `employer_name` | |
+| `canonical_url` | `absolute_url` | stored, never fetched |
+| `location_text` | `location.name` | verbatim |
+| `secondary_locations` | `offices[].location` or `offices[].name` | verbatim |
+| `work_mode` | `location.name` | `remote` only when the name starts with "Remote"; `hybrid` when it contains the word "Hybrid"; otherwise unknown |
+| `location_country` | — | always unknown: the API has no structured country |
+| `description` | `content` | HTML-escaped HTML, unescaped once and reduced to text; scripts and link targets dropped |
+| `posted_at`, `updated_at` | `first_published`, `updated_at` | |
+
+**Always unknown:** permitted countries, remote geography, sponsorship, relocation, work authorization, salary, employment type, and closing date.
+
+**Listing semantics.** One unpaginated response. When `meta.total` disagrees with the number of jobs returned, the listing is treated as incomplete and no posting is marked stale. Absence otherwise marks a posting `stale`, which is reversible; nothing is closed or deleted.
+
+**Limits and failures.** The same as Ashby: one request per run, 5 minutes minimum between runs, the Phase 5A size and time limits, 2,000 postings per run, the same retry classification, and per-record rejection.
+
+### `lever_postings` (Lever public Postings API, 2026-11-16)
+
+Implementation: `backend/app/services/sources/lever.py`. Approved under the same decision record.
+
+**Endpoint.** The documented public Postings API, listing only:
+
+```
+GET https://api.lever.co/v0/postings/{site}?mode=json      (region "global")
+GET https://api.eu.lever.co/v0/postings/{site}?mode=json   (region "eu")
+```
+
+Reference: <https://github.com/lever/postings-api>. The request is anonymous and read-only. The apply endpoint needs the employer's API key and is never used.
+
+**Authorization basis.** The same rules as Greenhouse. Register with `python -m app.admin register-lever --name N --site SITE --employer E --basis official_api --evidence-ref REF --reviewed-by WHO --terms-version V [--region eu] [--approve]`.
+
+**Endpoint binding.** The config must be exactly:
+
+- `fetch_hosts = [<regional API host>]`;
+- `fetch_path_prefixes = ["/v0/postings/<site>"]`;
+- `allowed_url_hosts = [<regional jobs host>]`.
+
+**Field mapping.** Explicit fields only.
+
+| Normalized field | Lever source | Rule |
+|---|---|---|
+| `source_job_id` | `id` (UUID) | `hostedUrl`, when present, must be on the jobs host and name the same site and ID, or the record is rejected |
+| `title` | `text` | required |
+| `canonical_url` | `hostedUrl` | stored, never fetched; `applyUrl` is not used |
+| `location_text`, `secondary_locations` | `categories.location`, `categories.allLocations` | verbatim |
+| `work_mode` | `workplaceType` | `remote`, `hybrid`, `on-site`; `unspecified` → unknown |
+| `location_country` | `country` (ISO 3166-1 alpha-2) | only for on-site and hybrid roles; a remote posting's country is where it is listed, not where work is permitted |
+| `employment_type` | `categories.commitment` | fixed table (full-time, part-time, intern, contract, temporary); otherwise unknown |
+| `compensation` | `salaryRange` | only with a 3-letter currency and a known interval (`per-year-salary` and others); never converted |
+| `description` | `descriptionPlain` (else `description` as text), `additionalPlain`, then each `lists[]` title and content | list titles such as "Requirements" become section headings for the text extractor |
+| `posted_at` | `createdAt` (epoch milliseconds) | normalized to UTC |
+
+**Always unknown:** permitted countries, remote geography, sponsorship, relocation, work authorization, and closing date.
+
+**Listing semantics, limits, and failures.** Without `limit`, the endpoint returns every published posting, so the listing is complete and absence marks a posting stale (reversible). A response that is not a list is `invalid_provider_response`. The limits and retry classification are the same as Ashby.
+
+**Fixtures and tests (both providers).**
+
+- Fixtures: `backend/tests/fixtures/greenhouse/board_v1.json` and `backend/tests/fixtures/lever/site_v1.json`, sanitized and fabricated (see `backend/tests/fixtures/greenhouse/README.md`).
+- Tests: `backend/tests/test_board_providers.py`, run through `httpx.MockTransport` with no network.
+- No live smoke test has been run. Before a board is enabled in a deployment, its host must be added to `SOURCE_EGRESS_ALLOWLIST` and to the egress proxy allowlist, and one read-only smoke run must be recorded.
 
 ## Live network controls (Phase 5A)
 

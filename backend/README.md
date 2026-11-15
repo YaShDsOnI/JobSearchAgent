@@ -66,6 +66,10 @@ In the app, prepare and approve a sandbox job's package, choose "Fill the sandbo
 
 `python -m app.backup create --out-root DIR --ledger FILE`, then `verify`, `restore`, `update-ledger`, `replay-deletions`, and `prune`. These need `BACKUP_ENCRYPTION_KEY` (32 bytes, URL-safe base64, different from the artifact key). In the reference deployment, run `docker compose --profile ops run --rm backup ...`. Runbook: `../docs/runbooks.md`, "Backup and restore".
 
+## Greenhouse and Lever boards
+
+Register a board with `python -m app.admin register-greenhouse --name <n> --board <token> --employer "<Employer>" --basis official_api --evidence-ref <url> --reviewed-by <role> --terms-version <v> [--careers-host <host>] [--approve]`. For Lever, use `register-lever --site <site> [--region eu]` with the same flags. Connectors start disabled. Live fetching needs `SOURCE_NETWORK_ACCESS_ENABLED=true` and the API host (`boards-api.greenhouse.io`, `api.lever.co`, or `api.eu.lever.co`) in `SOURCE_EGRESS_ALLOWLIST`. Design: `../docs/source-connectors.md`.
+
 ## Artifact key rotation (Phase 7)
 
 Set the new key in `ARTIFACT_ENCRYPTION_KEY` and the old one in `ARTIFACT_PREVIOUS_ENCRYPTION_KEYS`. Run `python -m app.admin rotate-artifact-keys --reason "<ticket>"` until `python -m app.admin artifact-key-status` reports `previous_keys_still_needed: false`. Exit code 5 means some artifacts could not be rotated and were left untouched. Then remove the old key. Runbook: `../docs/runbooks.md`, "Artifact key rotation".

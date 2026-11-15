@@ -1,0 +1,64 @@
+[
+  {
+    "id": "aaaaaaaa-1111-4111-8111-111111111111",
+    "text": "Site Reliability Engineer",
+    "categories": {
+      "location": "Vadodara, India",
+      "commitment": "Full-time",
+      "team": "Infrastructure",
+      "department": "Engineering",
+      "allLocations": ["Vadodara, India", "Ahmedabad, India"]
+    },
+    "country": "IN",
+    "workplaceType": "on-site",
+    "descriptionPlain": "Keep our platform reliable.",
+    "description": "<div>Keep our platform reliable.</div>",
+    "lists": [
+      {"text": "Requirements", "content": "<li>3+ years with Terraform.</li><li>Strong Linux skills.</li>"},
+      {"text": "Nice to have", "content": "<li>Prometheus and Grafana.</li>"}
+    ],
+    "additionalPlain": "We offer a learning budget for AWS certifications.",
+    "hostedUrl": "https://jobs.lever.co/example-site/aaaaaaaa-1111-4111-8111-111111111111",
+    "applyUrl": "https://jobs.lever.co/example-site/aaaaaaaa-1111-4111-8111-111111111111/apply",
+    "createdAt": 1790000000000,
+    "salaryRange": {"currency": "INR", "interval": "per-year-salary", "min": 2400000, "max": 3600000}
+  },
+  {
+    "id": "bbbbbbbb-2222-4222-8222-222222222222",
+    "text": "Frontend Engineer",
+    "categories": {"location": "Remote", "commitment": "Contract"},
+    "country": "US",
+    "workplaceType": "remote",
+    "descriptionPlain": "Requirements:\nReact and TypeScript required.",
+    "lists": [],
+    "hostedUrl": "https://jobs.lever.co/example-site/bbbbbbbb-2222-4222-8222-222222222222",
+    "createdAt": 1790000500000,
+    "salaryRange": {"currency": "USD", "min": 90000, "max": 120000}
+  },
+  {
+    "id": "cccccccc-3333-4333-8333-333333333333",
+    "text": "Product Designer",
+    "categories": {"location": "Berlin", "commitment": "Part-time"},
+    "country": "DE",
+    "workplaceType": "unspecified",
+    "descriptionPlain": "Figma required.",
+    "hostedUrl": "https://jobs.lever.co/example-site/cccccccc-3333-4333-8333-333333333333",
+    "createdAt": 1790001000000
+  },
+  {
+    "id": "dddddddd-4444-4444-8444-444444444444",
+    "text": "Mismatched URL",
+    "categories": {"location": "Remote"},
+    "workplaceType": "remote",
+    "descriptionPlain": "Points at another site.",
+    "hostedUrl": "https://jobs.lever.co/other-site/dddddddd-4444-4444-8444-444444444444"
+  },
+  {
+    "id": "not-a-uuid",
+    "text": "Bad Identifier",
+    "categories": {"location": "Remote"},
+    "workplaceType": "remote",
+    "hostedUrl": "https://jobs.lever.co/example-site/not-a-uuid"
+  },
+  42
+]

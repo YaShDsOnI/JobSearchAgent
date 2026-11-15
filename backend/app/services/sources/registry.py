@@ -39,9 +39,13 @@ def default_registry() -> ProviderRegistry:
     # enabled, the host is allowlisted, and the connector's authorization is complete.
     from app.services.sources.ashby import AshbyJobBoardProvider
     from app.services.sources.fixture import BundledFixtureProvider, SandboxFixtureProvider
+    from app.services.sources.greenhouse import GreenhouseJobBoardProvider
+    from app.services.sources.lever import LeverPostingsProvider
 
     registry = ProviderRegistry()
     registry.register("fixture", BundledFixtureProvider)
     registry.register("ashby_job_board", AshbyJobBoardProvider)
+    registry.register("greenhouse_job_board", GreenhouseJobBoardProvider)
+    registry.register("lever_postings", LeverPostingsProvider)
     registry.register("sandbox_ats_fixture", SandboxFixtureProvider)
     return registry

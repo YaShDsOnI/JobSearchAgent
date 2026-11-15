@@ -263,6 +263,21 @@ Stored-data change: none in the schema. New consent purpose `automatic_matching`
 
 Evidence: `docs/testing.md`, "Agent loop tests".
 
+### Official read-only sources implementation note (2026-11-16)
+
+Implemented under "Decision record: agent build-out program (2026-11-16)", item 2:
+
+- `greenhouse_job_board` and `lever_postings` providers;
+- the shared `_register_board_connector` registration path (Ashby uses it too);
+- `register-greenhouse` and `register-lever` admin commands;
+- sanitized contract fixtures.
+
+Every board needs its own authorization record. Connectors start disabled, and live network access stays off by default. No board has been enabled, and no live smoke test has been run.
+
+Stored-data change: none. These are new connector kinds in the existing tables.
+
+Evidence: `docs/testing.md`, "Greenhouse and Lever provider tests".
+
 ## Phase 8 — expansion only by evidence
 
 Add connectors one at a time after policy review, fixtures, terms/authorization, rate limits, observability, and rollback. Consider additional models, vector retrieval, multilingual support, and more ATS adapters only when the simpler design fails a measured need.
