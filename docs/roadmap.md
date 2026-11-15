@@ -290,6 +290,18 @@ Stored-data change: none. Suggestions are derived on request and never stored.
 
 Evidence: `docs/testing.md`, "CV fact suggestion tests".
 
+### Phase 7 remainder implementation note (2026-11-16)
+
+Implemented under "Decision record: agent build-out program (2026-11-16)", item 5:
+
+- Support access: `support_access_grants` (migration `0012`), the `support` role, `/support/grants` for candidates, `/support/cases` for support, and the workspace panels.
+- Pilot metrics: `app/services/metrics.py`, `GET /ops/metrics`, and `pilot-metrics`.
+- Off-site backup copies: `python -m app.backup replicate`.
+
+Cost budgets apply to paid model calls only, and they ship with the optional model-assisted extraction (item 6).
+
+Evidence: `docs/testing.md`, "Phase 7 support access, pilot metrics, and off-site copy tests".
+
 ### Candidate workspace implementation note (2026-11-16)
 
 Implemented under "Decision record: agent build-out program (2026-11-16)", item 4.
@@ -394,7 +406,7 @@ Phases 1 to 6 are implemented (see the notes above). Live access stays disabled 
 The agent build-out program (decision record of 2026-11-16) is in progress; see its implementation notes. Phase 7 is in progress. Backup and restore with deletion replay, the incident runbooks, and artifact key rotation are implemented. Next:
 
 1. Run the restore drill, one key rotation, and one incident exercise in a real deployed environment, and record the results.
-2. Get product-owner approval for the remaining deferred Phase 7 items: support access controls, pilot metrics and cost budgets, and off-site backup replication.
+2. Choose and approve an off-site backup target, create support accounts, and start recording pilot metrics weekly. Support access, pilot metrics, and off-site copies are implemented (2026-11-16).
 3. The product owner runs the pilot recruitment, sets the quality and safety thresholds, and arranges legal review.
 
 Do not add a real application destination, further live providers, scraping, model calls, or unattended or batch submission without a new approval.

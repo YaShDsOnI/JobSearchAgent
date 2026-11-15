@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.db.models import User
 from app.services.audit import record_audit
 
-ROLES = ("candidate", "operator")
+ROLES = ("candidate", "operator", "support")
 
 
 class RoleChangeError(ValueError):

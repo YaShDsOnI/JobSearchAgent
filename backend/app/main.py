@@ -17,6 +17,7 @@ from app.api.routes import (
     profile,
     reviews,
     submissions,
+    support,
     tracker,
 )
 from app.core.config import get_settings
@@ -82,6 +83,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 app.include_router(health.router, prefix=settings.api_prefix)
 app.include_router(agent.router, prefix=settings.api_prefix)
+app.include_router(support.router, prefix=settings.api_prefix)
 app.include_router(auth.router, prefix=settings.api_prefix)
 app.include_router(profile.router, prefix=settings.api_prefix)
 app.include_router(catalog.router, prefix=settings.api_prefix)

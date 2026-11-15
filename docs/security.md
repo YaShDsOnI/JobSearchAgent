@@ -82,7 +82,12 @@ Implemented in Phase 7 (`python -m app.backup`; operations in `docs/runbooks.md`
   - The manifest holds no personal data and is MAC'd.
   - Restore refuses tampered or mismatched files.
 - The backup key is separate from every artifact key, current and previous, which the CLI enforces. Only the backup CLI and the compose `backup` service receive it. Both keys are stored apart from the backups.
-- Backups are retained for 35 days, and the newest backup is always kept. Off-site copies follow the same retention. Off-site replication is not implemented yet, and its target needs product-owner approval for personal data.
+- Backups are retained for 35 days, and the newest backup is always kept. Off-site copies follow the same retention.
+- **Off-site copies** (`python -m app.backup replicate`).
+  - The source backup is fully verified first.
+  - The copy is written as `.partial`, verified again at the target, then renamed. An existing copy is re-verified, never overwritten.
+  - The deletion ledger is merged into the target's ledger, never replaced.
+  - The target must be approved for personal data. `--approval-ref` is required, and it is recorded in the `backup.replicated` audit event.
 - Deletion survives restore. Every restore is followed by replay of the deletion ledger, so a backup never brings back data the candidate deleted. The ledger holds only data request IDs, user IDs, and completion times. It is MAC'd with the backup key, because a forged entry would cause a deletion.
 - Restore never merges or overwrites. It accepts only an empty, migrated target, commits only an exact read-back copy, and records a `backup.restored` audit event.
 - CLI output and audit metadata hold IDs, counts, and hashes only.
@@ -125,6 +130,28 @@ Implemented in Phase 7, second increment (`docs/roadmap.md`, "Decision record: P
 - The agent processes a candidate's profile only with the candidate's `automatic_matching` consent. Withdrawing the consent stops it before the next refresh.
 - Matching is local and deterministic. Nothing leaves the deployment, and nothing is drafted, approved, or submitted on the candidate's behalf.
 - Job text is untrusted input. The text extractor only recognizes taxonomy skill names and never reads geography, authorization, sponsorship, salary, or education from prose. A job description therefore cannot make a job eligible, and it cannot steer any action.
+
+### Support access
+
+- **The candidate decides.** Only the candidate can grant access (`POST /support/grants`):
+  - to one named account holding the `support` role;
+  - for 1 to 72 hours;
+  - with a stated reason.
+
+  A new grant to the same account replaces the old one. The candidate sees every grant with its view count and last view, and can revoke it at any time.
+- **Support accounts.** The role is set only by `python -m app.admin promote-support` (and removed by `demote-support`), never over HTTP.
+- **Redacted, read-only summary.** Support sees counts and statuses only:
+  - which kinds of facts exist and whether they are confirmed, never their values;
+  - match, CV, application, submission, and tracker counts;
+  - recent activity names.
+
+  No CV, document, answer, contact detail, fact value, job text, or note is included, and the candidate's email is masked. There is no write path.
+- **Audited.** Every view writes `support.case_viewed` on the candidate's record. An expired, revoked, or foreign grant returns 404.
+- **Deleted with the profile.** Grants are exported with the profile and deleted with it.
+
+### Pilot metrics
+
+`GET /ops/metrics` (operators only) and `python -m app.admin pilot-metrics` report aggregate counts across all candidates: match quality, factual edits, user effort, source stability, adapter failure, and harmful events. A count from 1 to 4 is reported as `<5`, so that in a small pilot no number points at one person. No identifier, email, or content is included.
 
 ## Identity and access
 

@@ -3,6 +3,8 @@
     python -m app.admin promote-operator --email ops@example.org --reason "ticket OPS-12"
     python -m app.admin demote-operator --email ops@example.org --reason "role change"
     python -m app.admin list-operators
+    python -m app.admin promote-support --email s@example.org --reason R   # (and demote-support)
+    python -m app.admin pilot-metrics   # aggregate counts only; 1-4 shown as "<5"
     python -m app.admin reconcile-artifacts [--apply] [--grace-minutes 60]
     python -m app.admin artifact-key-status
     python -m app.admin rotate-artifact-keys --reason R [--limit N]   # exit code 5 on failures
@@ -35,6 +37,7 @@ from app.db.models import SourceConnector
 from app.db.session import SessionLocal
 from app.services.artifact_lifecycle import reconcile_artifacts
 from app.services.key_rotation import artifact_key_status, rotate_artifact_keys
+from app.services.metrics import pilot_metrics
 from app.services.operators import RoleChangeError, list_operators, set_user_role
 from app.services.sources.alerts import send_health_alerts
 from app.services.sources.connectors import (
@@ -61,11 +64,12 @@ def _actor() -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.admin")
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("promote-operator", "demote-operator"):
+    for name in ("promote-operator", "demote-operator", "promote-support", "demote-support"):
         command = commands.add_parser(name)
         command.add_argument("--email", required=True)
         command.add_argument("--reason", required=True)
     commands.add_parser("list-operators")
+    commands.add_parser("pilot-metrics", help="Aggregate pilot metrics (small counts suppressed)")
     reconcile = commands.add_parser("reconcile-artifacts")
     reconcile.add_argument("--apply", action="store_true", help="Delete what is found")
     reconcile.add_argument("--grace-minutes", type=int, default=60)
@@ -119,8 +123,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     with SessionLocal() as db:
-        if args.command in {"promote-operator", "demote-operator"}:
-            role = "operator" if args.command == "promote-operator" else "candidate"
+        if args.command in {
+            "promote-operator", "demote-operator", "promote-support", "demote-support"
+        }:
+            role = {"promote-operator": "operator", "promote-support": "support"}.get(
+                args.command, "candidate"
+            )
             try:
                 user = set_user_role(
                     db, email=args.email, role=role, actor=_actor(), reason=args.reason
@@ -131,6 +139,8 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             db.commit()
             print(json.dumps({"email": user.email, "role": user.role}))
+        elif args.command == "pilot-metrics":
+            print(json.dumps(pilot_metrics(db), sort_keys=True))
         elif args.command == "list-operators":
             print(json.dumps([user.email for user in list_operators(db)]))
         elif args.command == "set-schedule":

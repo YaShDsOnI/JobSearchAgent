@@ -66,6 +66,14 @@ In the app, prepare and approve a sandbox job's package, choose "Fill the sandbo
 
 `python -m app.backup create --out-root DIR --ledger FILE`, then `verify`, `restore`, `update-ledger`, `replay-deletions`, and `prune`. These need `BACKUP_ENCRYPTION_KEY` (32 bytes, URL-safe base64, different from the artifact key). In the reference deployment, run `docker compose --profile ops run --rm backup ...`. Runbook: `../docs/runbooks.md`, "Backup and restore".
 
+## Support access and pilot metrics
+
+- Create support accounts with `python -m app.admin promote-support --email <e> --reason "<why>"`. Candidates grant them time-boxed, read-only, redacted access from their profile.
+- `python -m app.admin pilot-metrics` prints aggregate counts, with counts from 1 to 4 shown as `<5`.
+- Copy backups off-site with `python -m app.backup replicate --backup DIR --target-root OFFSITE --approval-ref REF [--ledger FILE]`.
+
+Runbook: `../docs/runbooks.md`.
+
 ## Greenhouse and Lever boards
 
 Register a board with `python -m app.admin register-greenhouse --name <n> --board <token> --employer "<Employer>" --basis official_api --evidence-ref <url> --reviewed-by <role> --terms-version <v> [--careers-host <host>] [--approve]`. For Lever, use `register-lever --site <site> [--region eu]` with the same flags. Connectors start disabled. Live fetching needs `SOURCE_NETWORK_ACCESS_ENABLED=true` and the API host (`boards-api.greenhouse.io`, `api.lever.co`, or `api.eu.lever.co`) in `SOURCE_EGRESS_ALLOWLIST`. Design: `../docs/source-connectors.md`.

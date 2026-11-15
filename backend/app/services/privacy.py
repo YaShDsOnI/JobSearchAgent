@@ -22,6 +22,7 @@ from app.db.models import (
     ProfileFact,
     ProfileVersion,
     StoredArtifact,
+    SupportAccessGrant,
 )
 from app.services.applications import delete_applications
 from app.services.audit import record_audit
@@ -90,6 +91,14 @@ def delete_candidate_data(
     if profile:
         profile.current_version_id = None
     db.execute(delete(MatchReview).where(MatchReview.user_id == user_id))
+    # Support grants name a support account and hold the candidate's own reason text.
+    support_grant_count = len(
+        db.execute(
+            delete(SupportAccessGrant)
+            .where(SupportAccessGrant.user_id == user_id)
+            .returning(SupportAccessGrant.id)
+        ).all()
+    )
     db.execute(delete(MatchRun).where(MatchRun.user_id == user_id))
     data_request = DataRequest(
         user_id=user_id,
@@ -103,6 +112,7 @@ def delete_candidate_data(
         "artifact_count": len(object_keys),
         "application_count": application_count,
         "tracker_count": tracker_count,
+        "support_grant_count": support_grant_count,
     }
     if replay_of is not None:
         metadata["replay_of"] = replay_of

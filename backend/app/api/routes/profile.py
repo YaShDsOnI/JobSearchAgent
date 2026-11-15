@@ -43,6 +43,7 @@ from app.services.cv_suggestions import (
 )
 from app.services.privacy import delete_candidate_data
 from app.services.storage import ArtifactStorage
+from app.services.support import grants_for_candidate
 from app.services.tracker import export_entries
 
 router = APIRouter(prefix="/profile", tags=["profile"])
@@ -352,6 +353,19 @@ def export_profile(user: User = Depends(get_current_user), db: Session = Depends
         ],
         "applications": export_applications(db, user.id),
         "tracked_applications": export_entries(db, user.id),
+        "support_access_grants": [
+            {
+                "id": grant.id,
+                "support_user_id": grant.support_user_id,
+                "scope": grant.scope,
+                "reason": grant.reason,
+                "granted_at": grant.granted_at.isoformat(),
+                "expires_at": grant.expires_at.isoformat(),
+                "revoked_at": grant.revoked_at.isoformat() if grant.revoked_at else None,
+                "view_count": grant.view_count,
+            }
+            for grant in grants_for_candidate(db, user.id)
+        ],
         "cv_versions": [
             {
                 "id": version.id,
