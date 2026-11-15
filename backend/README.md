@@ -66,6 +66,10 @@ In the app, prepare and approve a sandbox job's package, choose "Fill the sandbo
 
 `python -m app.backup create --out-root DIR --ledger FILE`, then `verify`, `restore`, `update-ledger`, `replay-deletions`, and `prune`. These need `BACKUP_ENCRYPTION_KEY` (32 bytes, URL-safe base64, different from the artifact key). In the reference deployment, run `docker compose --profile ops run --rm backup ...`. Runbook: `../docs/runbooks.md`, "Backup and restore".
 
+## Artifact key rotation (Phase 7)
+
+Set the new key in `ARTIFACT_ENCRYPTION_KEY` and the old one in `ARTIFACT_PREVIOUS_ENCRYPTION_KEYS`. Run `python -m app.admin rotate-artifact-keys --reason "<ticket>"` until `python -m app.admin artifact-key-status` reports `previous_keys_still_needed: false`. Exit code 5 means some artifacts could not be rotated and were left untouched. Then remove the old key. Runbook: `../docs/runbooks.md`, "Artifact key rotation".
+
 ## Reference deployment
 
 `docker compose --profile app up --build` (from the repository root) runs migrations, the API (on `127.0.0.1:8000`), a continuous worker and scheduler, and the egress proxy. The worker and scheduler sit on an internal network whose only route out is the proxy. Put `POSTGRES_PASSWORD`, `SESSION_SECRET`, `ARTIFACT_ENCRYPTION_KEY`, and any `SOURCE_*` and `ALERT_*` settings in a root `.env` (never committed). Put secret files in `deploy/secrets/` (git-ignored), or point `SECRETS_HOST_DIR` elsewhere. Before enabling network access in any deployed environment, run `deploy/egress-proxy/verify.py` there (see `../docs/testing.md`). Design: `../docs/source-connectors.md`, "Deployment enforcement".

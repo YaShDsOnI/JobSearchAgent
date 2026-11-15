@@ -35,7 +35,7 @@ from app.services.backup import (
     restore_backup,
     update_deletion_ledger,
 )
-from app.services.storage import ArtifactStorage, decode_artifact_key
+from app.services.storage import ArtifactStorage, keyring_from_settings
 
 
 def _actor() -> str:
@@ -58,7 +58,7 @@ def _parser() -> argparse.ArgumentParser:
     verify.add_argument(
         "--no-decrypt-artifacts",
         action="store_true",
-        help="Check file hashes only (when ARTIFACT_ENCRYPTION_KEY is not available here)",
+        help="Check file hashes only (when the artifact keys are not available here)",
     )
     restore = commands.add_parser("restore", help="Restore into an empty, migrated target")
     restore.add_argument("--backup", type=Path, required=True)
@@ -106,7 +106,9 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
         return {"removed": removed}
 
     backup_key = decode_backup_key(
-        settings.backup_encryption_key, artifact_key_value=settings.artifact_encryption_key
+        settings.backup_encryption_key,
+        artifact_key_value=settings.artifact_encryption_key,
+        previous_artifact_key_values=settings.artifact_previous_encryption_keys,
     )
     storage_root = Path(settings.artifact_storage_path)
 
@@ -131,11 +133,9 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
         return summary
 
     if args.command == "verify":
-        artifact_key = (
-            None
-            if args.no_decrypt_artifacts
-            else decode_artifact_key(settings.artifact_encryption_key)
-        )
+        # Every configured artifact key is tried: a backup taken before a key rotation
+        # holds blobs under the previous key.
+        artifact_key = None if args.no_decrypt_artifacts else keyring_from_settings(settings)
         return load_backup(args.backup, backup_key, artifact_key=artifact_key).summary()
 
     if args.command == "update-ledger":
@@ -156,7 +156,7 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
         storage_root,
         args.backup,
         backup_key,
-        decode_artifact_key(settings.artifact_encryption_key),
+        keyring_from_settings(settings),
     )
     summary = restored.summary()
     with SessionLocal() as db:

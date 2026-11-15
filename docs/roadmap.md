@@ -202,6 +202,25 @@ Deferred until the product owner explicitly approves them:
 
 The pilot itself, its quality and safety thresholds, and legal review are the product owner's to run.
 
+### Decision record: Phase 7 second increment (2026-11-15)
+
+On 2026-11-15 the product owner was asked which deferred Phase 7 items to approve. They approved **artifact key rotation and re-encryption** only. Support access controls, pilot metrics and cost budgets, and off-site backup replication stay deferred.
+
+Scope:
+
+- `ARTIFACT_PREVIOUS_ENCRYPTION_KEYS` holds earlier artifact keys so that their blobs stay readable during a rotation. New blobs always use `ARTIFACT_ENCRYPTION_KEY`.
+- `python -m app.admin artifact-key-status` reports how many artifacts each key protects, by key fingerprint.
+- `python -m app.admin rotate-artifact-keys --reason R` re-encrypts blobs onto the current key in place. It is idempotent and safe to interrupt.
+- Backup `verify` and `restore` accept every configured key and report which key fingerprints a backup needs.
+
+Security and stored-data decisions:
+
+- No new table, column, or migration. The existing `stored_artifacts.encryption_key_ref` column now records the key that encrypted each blob as `local:aes-gcm:<fingerprint>`. The fingerprint is an HMAC of a fixed label under the key, truncated to 16 hex characters, so it does not reveal the key. Rows written earlier keep `local:aes-gcm:v1`, which names no particular key.
+- Re-encryption changes only the ciphertext. The object key, the artifact ID bound into the ciphertext, the plaintext, and its SHA-256 stay the same, so immutable CV versions, review packages, and submissions are unaffected.
+- No new access, role, outbound connection, or copy of personal data. Audit events hold counts, key fingerprints, and the stated reason.
+- A retired key must stay in escrow, but out of the deployment, until every backup taken before the rotation has passed the 35-day retention. Restoring such a backup needs it.
+- Profile deletion now deletes artifact rows before unlinking their blobs, inside the same transaction. A rotation that holds a row lock therefore either finishes first or finds no row, so it can never rewrite a deleted blob.
+
 ## Phase 8 — expansion only by evidence
 
 Add connectors one at a time after policy review, fixtures, terms/authorization, rate limits, observability, and rollback. Consider additional models, vector retrieval, multilingual support, and more ATS adapters only when the simpler design fails a measured need.
@@ -261,6 +280,20 @@ Evidence (`docs/testing.md`, "Phase 7 backup and restore tests"):
 - A failed restore leaves nothing behind.
 - Deletion replay removes data deleted after the backup, is idempotent, and keeps data created after the deletion.
 
+## Phase 7 second increment implementation note (2026-11-15)
+
+Implemented under "Decision record: Phase 7 second increment (2026-11-15)":
+
+- `backend/app/core/keyring.py` (key ring, fingerprints, blob encryption), `backend/app/services/key_rotation.py` (status and rotation), and the two `app.admin` commands.
+- `ArtifactStorage` reads through the key ring and labels every new blob with its key. Backup `verify` and `restore` use the key ring.
+
+Evidence (`docs/testing.md`, "Phase 7 artifact key rotation tests"):
+
+- After rotation, every blob decrypts only with the new key, to unchanged plaintext.
+- Interrupted runs, legacy rows, batches, and failures are all handled without losing readability.
+- A pre-rotation backup verifies and restores with the previous key and is refused without it.
+- On PostgreSQL, a profile deletion waits for an in-flight rotation and no blob survives.
+
 Phase 7 acceptance status:
 
 - Deletion and export exercises can now be run with the restore drill, but have not yet been run in a deployed environment.
@@ -272,10 +305,10 @@ Phase 7 acceptance status:
 
 Phases 1 to 6 are implemented (see the notes above). Live access stays disabled by default, and the only application destination is the local sandbox ATS.
 
-Phase 7 is in progress. Backup and restore with deletion replay, and the incident runbooks, are implemented. Next:
+Phase 7 is in progress. Backup and restore with deletion replay, the incident runbooks, and artifact key rotation are implemented. Next:
 
-1. Run the restore drill and one incident exercise in a real deployed environment, and record the results.
-2. Get product-owner approval for the deferred Phase 7 items: support access controls, pilot metrics and cost budgets, off-site backup replication, and artifact key rotation.
+1. Run the restore drill, one key rotation, and one incident exercise in a real deployed environment, and record the results.
+2. Get product-owner approval for the remaining deferred Phase 7 items: support access controls, pilot metrics and cost budgets, and off-site backup replication.
 3. The product owner runs the pilot recruitment, sets the quality and safety thresholds, and arranges legal review.
 
 Do not add a real application destination, further live providers, scraping, model calls, or unattended or batch submission without a new approval.

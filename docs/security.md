@@ -78,15 +78,32 @@ Implemented in Phase 7 (`python -m app.backup`; operations in `docs/runbooks.md`
 
 - A backup is a full copy of personal data, so it gets the same protection as the primary stores.
   - The database dump is AES-GCM encrypted under a key derived from `BACKUP_ENCRYPTION_KEY`.
-  - Blobs stay encrypted under `ARTIFACT_ENCRYPTION_KEY`.
+  - Blobs stay encrypted under the artifact key that wrote them. Before a rotation that is the previous key (see "Artifact key rotation").
   - The manifest holds no personal data and is MAC'd.
   - Restore refuses tampered or mismatched files.
-- The backup key is separate from the artifact key, which the CLI enforces. Only the backup CLI and the compose `backup` service receive it. Both keys are stored apart from the backups.
+- The backup key is separate from every artifact key, current and previous, which the CLI enforces. Only the backup CLI and the compose `backup` service receive it. Both keys are stored apart from the backups.
 - Backups are retained for 35 days, and the newest backup is always kept. Off-site copies follow the same retention. Off-site replication is not implemented yet, and its target needs product-owner approval for personal data.
 - Deletion survives restore. Every restore is followed by replay of the deletion ledger, so a backup never brings back data the candidate deleted. The ledger holds only data request IDs, user IDs, and completion times. It is MAC'd with the backup key, because a forged entry would cause a deletion.
 - Restore never merges or overwrites. It accepts only an empty, migrated target, commits only an exact read-back copy, and records a `backup.restored` audit event.
 - CLI output and audit metadata hold IDs, counts, and hashes only.
-- Known gap: there is no artifact key rotation or re-encryption tool yet (`docs/runbooks.md`, "Leaked secret or token").
+
+### Artifact key rotation
+
+Implemented in Phase 7, second increment (`docs/roadmap.md`, "Decision record: Phase 7 second increment (2026-11-15)"). Operations: `docs/runbooks.md`, "Artifact key rotation".
+
+- **Key ring.** New blobs are always encrypted under `ARTIFACT_ENCRYPTION_KEY`. Keys listed in `ARTIFACT_PREVIOUS_ENCRYPTION_KEYS` are used only to read blobs written before a rotation. Each read tries the current key first. AES-GCM authenticates every attempt, so a wrong key fails and never yields the wrong plaintext. Startup refuses a previous key that does not decode, repeats another key, or equals the current key.
+- **Labels.** `stored_artifacts.encryption_key_ref` records the key as `local:aes-gcm:<fingerprint>`. The fingerprint is HMAC-SHA256 of a fixed label under the key, truncated to 16 hex characters. It identifies a key in status output, audit events, and escrow records without revealing it. Rows written before this increment carry `local:aes-gcm:v1`, which names no particular key.
+- **Re-encryption** (`python -m app.admin rotate-artifact-keys`) works one artifact at a time:
+  - It locks the row before reading the blob.
+  - It checks the decrypted plaintext against the row's SHA-256 and size.
+  - It atomically replaces the blob (temporary file, fsync, rename) under the same object key and artifact ID.
+  - It commits the new label only after the replacement.
+  - The plaintext, its hash, and every reference to the artifact are unchanged.
+- **Failure states.** A crash can leave a new blob with the old label, never the reverse. So `artifact-key-status` never reports a previous key as unneeded while a blob still depends on it.
+- **Integrity failures are reported, never repaired.** A missing blob, a blob that no configured key decrypts, and a plaintext that does not match its row are left untouched, counted, and returned as exit code 5.
+- **No resurrection of deleted data.** Rotation skips rows deleted since it listed them. Profile deletion deletes rows before unlinking blobs, and private-source deletion commits row deletions before removing blobs. Either way, a rotation never rewrites a deleted artifact's blob.
+- **Retired keys.** Remove a previous key from the deployment once `artifact-key-status` reports `previous_keys_still_needed: false`. Keep it in escrow until every backup taken before the rotation has passed the 35-day retention, because those backups hold blobs under it. `python -m app.backup verify` reports the key fingerprints each backup needs.
+- **A leaked key.** Rotation protects the live store only. Backups taken before the rotation remain readable with the leaked key. The runbook says when to delete them.
 
 ## Identity and access
 

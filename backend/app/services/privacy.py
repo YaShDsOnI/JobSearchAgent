@@ -59,12 +59,16 @@ def delete_candidate_data(
         )
     )
     db.execute(delete(CVVersion).where(CVVersion.user_id == user_id))
-    artifacts = db.scalars(
-        select(StoredArtifact).where(StoredArtifact.owner_user_id == user_id)
-    ).all()
-    for artifact in artifacts:
-        storage.delete(artifact.object_key)
+    object_keys = list(
+        db.scalars(
+            select(StoredArtifact.object_key).where(StoredArtifact.owner_user_id == user_id)
+        )
+    )
+    # Delete (and so lock) the rows before unlinking their blobs: key rotation holds the
+    # row lock while it rewrites a blob, so it either finishes first or finds no row.
     db.execute(delete(StoredArtifact).where(StoredArtifact.owner_user_id == user_id))
+    for object_key in object_keys:
+        storage.delete(object_key)
     profile_versions = db.scalars(
         select(ProfileVersion).where(ProfileVersion.user_id == user_id)
     ).all()
@@ -96,7 +100,7 @@ def delete_candidate_data(
     db.add(data_request)
     db.flush()
     metadata: dict[str, object] = {
-        "artifact_count": len(artifacts),
+        "artifact_count": len(object_keys),
         "application_count": application_count,
         "tracker_count": tracker_count,
     }

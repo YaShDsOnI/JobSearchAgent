@@ -603,6 +603,7 @@ def _add_artifact(
         content_type=content_type,
         size_bytes=int(stored["size_bytes"]),
         sha256=str(stored["sha256"]),
+        encryption_key_ref=str(stored["encryption_key_ref"]),
     )
     db.add(artifact)
     # Flush before a CVVersion references it: there is no ORM relationship to order the
