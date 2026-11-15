@@ -17,7 +17,25 @@ from app.services.skills_taxonomy import TAXONOMY_VERSION, canonical_name
 # rules-v2: structured requirements when the provider supplies them, otherwise skills read
 # from the description text (`app.services.jd_text`). rules-v1 analyses stay as recorded.
 EXTRACTOR_VERSION = "rules-v2"
-__all__ = ["EXTRACTOR_VERSION", "TAXONOMY_VERSION", "analyze_job_snapshot", "canonical_skill"]
+# With MODEL_EXTRACTION_ENABLED, descriptions without structured requirements are first sent
+# to the model (`app.services.model_extraction`); rules-v2 text extraction is the fallback.
+MODEL_ASSISTED_EXTRACTOR_VERSION = "rules-v2+model-assisted-v1"
+__all__ = [
+    "EXTRACTOR_VERSION",
+    "MODEL_ASSISTED_EXTRACTOR_VERSION",
+    "TAXONOMY_VERSION",
+    "active_extractor_version",
+    "analyze_job_snapshot",
+    "canonical_skill",
+]
+
+
+def active_extractor_version() -> str:
+    from app.core.config import get_settings
+
+    if get_settings().model_extraction_enabled:
+        return MODEL_ASSISTED_EXTRACTOR_VERSION
+    return EXTRACTOR_VERSION
 
 SKILL_ALIASES = {
     "postgres": "PostgreSQL",
@@ -80,8 +98,9 @@ def _add_evidence(
 
 
 def analyze_job_snapshot(
-    db: Session, snapshot: JobSnapshot, *, extractor_version: str = EXTRACTOR_VERSION
+    db: Session, snapshot: JobSnapshot, *, extractor_version: str | None = None
 ) -> JobAnalysis:
+    extractor_version = extractor_version or active_extractor_version()
     existing = db.scalar(
         select(JobAnalysis).where(
             JobAnalysis.job_snapshot_id == snapshot.id,
@@ -140,6 +159,11 @@ def analyze_job_snapshot(
         db.flush()
         return analysis
     if not requirements:
+        if extractor_version == MODEL_ASSISTED_EXTRACTOR_VERSION and _add_model_requirements(
+            db, analysis, snapshot, source_text
+        ):
+            db.flush()
+            return analysis
         _add_text_requirements(db, analysis, source_text)
         db.flush()
         return analysis
@@ -219,3 +243,47 @@ def _add_text_requirements(db: Session, analysis: JobAnalysis, source_text: str)
             "requirements_source": "text",
         }
         analysis.confidence = TEXT_EXTRACTOR_CONFIDENCE
+
+
+def _add_model_requirements(
+    db: Session, analysis: JobAnalysis, snapshot: JobSnapshot, source_text: str
+) -> bool:
+    """Model-proposed requirements that passed validation; False means use the rules."""
+    from app.core.config import get_settings
+    from app.services.model_extraction import MODEL_CONFIDENCE, extract_requirements
+
+    result = extract_requirements(db, get_settings(), source_text, snapshot_id=snapshot.id)
+    analysis.structured_json = {
+        **analysis.structured_json,
+        "model_status": result.status,
+        "model": result.model,
+        "model_rejected": result.rejected,
+    }
+    if result.status != "ok" or not result.requirements:
+        return False
+    for index, item in enumerate(result.requirements):
+        evidence = _add_evidence(
+            db,
+            analysis,
+            field_path=f"requirements_model[{index}].evidence",
+            quote=item.evidence,
+            source_text=source_text,
+            confidence=item.confidence,
+        )
+        if evidence.start_offset is None:  # Validation already checked; keep the invariant.
+            db.delete(evidence)
+            continue
+        db.add(
+            JobRequirement(
+                analysis_id=analysis.id,
+                skill_id=_get_or_create_skill(db, item.skill).id,
+                skill_text=canonical_skill(item.skill),
+                requirement_kind=item.kind,
+                importance=1.0 if item.kind == "required" else 0.5,
+                minimum_years=item.minimum_years,
+                evidence_id=evidence.id,
+            )
+        )
+    analysis.structured_json = {**analysis.structured_json, "requirements_source": "model"}
+    analysis.confidence = MODEL_CONFIDENCE
+    return True

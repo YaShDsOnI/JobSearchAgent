@@ -16,6 +16,13 @@ Implementation note (2026-09-25): `backend/benchmarks/matching_v1.json` is the v
 - **Evidence.** Every requirement stores its sentence as a verbatim quote with offsets, and a requirement whose quote cannot be located is dropped. Text-derived requirements carry confidence 0.7 and `requirements_source: "text"`.
 - **Never read from prose:** geography, work authorization, sponsorship, salary, and education. Those come only from structured provider fields, so the extractor cannot change eligibility.
 
+**Model-assisted extraction (optional, `rules-v2+model-assisted-v1`).** With `MODEL_EXTRACTION_ENABLED=true`, a description without structured requirements is first sent to Claude:
+- Its proposals are kept only when the evidence is verbatim job text naming the skill, at confidence 0.8, with `requirements_source: "model"`.
+- A failed, refused, or over-budget call falls back to the rules, and `model_status` records why.
+- Matches made under the other extractor version become out of date, so the agent refreshes them.
+
+Details: `docs/security.md`, "Model-assisted extraction".
+
 **Fit.** A job with no required, preferred, or education requirement scores a neutral 50, with reason `requirements_unknown` and `requirements_known: false`. v1 reported such a job as a full match.
 
 **Location ladder** (`location_policy` in preferences: `home_country`, ordered `priorities`, ordered `preferred_cities`, `open_to_relocation`). The default order follows the original brief:

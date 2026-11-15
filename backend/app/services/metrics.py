@@ -78,6 +78,22 @@ def _rejected_records(db: Session, since: datetime) -> int:
     return total
 
 
+def _model_tokens(db: Session, since: datetime) -> int:
+    total = 0
+    rows: list[dict[str, Any]] = list(
+        db.scalars(
+            select(AuditEvent.metadata_json).where(
+                AuditEvent.action == "model.extraction_called", AuditEvent.occurred_at >= since
+            )
+        )
+    )
+    for metadata in rows:
+        for key in ("input_tokens", "output_tokens"):
+            value = (metadata or {}).get(key)
+            total += value if isinstance(value, int) else 0
+    return total
+
+
 def pilot_metrics(db: Session, *, now: datetime | None = None) -> dict[str, Any]:
     now = now or datetime.now(UTC)
     week = now - timedelta(days=7)
@@ -134,6 +150,10 @@ def pilot_metrics(db: Session, *, now: datetime | None = None) -> dict[str, Any]
         },
         "adapter_failure": {
             "submissions_by_state": _grouped(db, ApplicationSubmission.state),
+        },
+        "model_usage": {
+            "extraction_calls_7d": _audit_count(db, "model.extraction_called", week),
+            "tokens_7d": _model_tokens(db, week),
         },
         "harmful_events": {
             "submissions_unverified_or_not_received": suppress(

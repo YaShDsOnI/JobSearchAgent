@@ -148,7 +148,13 @@ Examples: a provider's terms changed, a rate limit was exceeded, a block or chal
 
 ## Model provider incident
 
-Not applicable yet: no model is called (see `AGENTS.md`). Before any model integration, this section must name the provider, region, retention, and the switch that stops calls.
+The only model call is optional model-assisted job extraction, to the Anthropic API. It sends public job text only. Data flow, region, retention, and budget are in `docs/security.md`, "Model-assisted extraction".
+
+1. **Stop calls.** Set `MODEL_EXTRACTION_ENABLED=false` and restart the API and worker. Matching continues with the deterministic `rules-v2` extractor; nothing else depends on the model.
+2. **Check the audit trail.** Use the `model.extraction_called` events for the time window: token counts, the served model, and stop reasons. No job or candidate text is in them, and no candidate data was ever sent.
+3. **If the API key may have leaked,** revoke it in the Anthropic Console and replace the `MODEL_API_KEY_REF` file.
+4. **If the problem was output quality,** compare affected analyses (`requirements_source = "model"`, `model_rejected` counts) with a `rules-v2` rerun. Fit scores are advisory, so no application could have been sent because of them.
+5. **Re-enable** only after the cause is understood, and record the date and reason.
 
 ## Data export failure
 
