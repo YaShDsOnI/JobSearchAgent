@@ -365,6 +365,7 @@ There is no hosted CI (decision 2026-11-13: checks run locally). `python tools/c
 | `test-postgres` | yes | full suite, Alembic upgrade → downgrade → upgrade, and `alembic check`, on a disposable memory-backed PostgreSQL 17 container (random password and port, always removed) |
 | `audit` | yes | `pip-audit` of the backend environment (needs network) |
 | `frontend` | yes | `tsc --noEmit` and the Vite production build |
+| `ui-smoke` | yes | `tools/ui_smoke.py`: a throwaway backend (SQLite, fixture jobs) and the built frontend served by `vite preview`, driven by headless Chromium through sign-up, CV upload and suggestions, profile, location ladder, agent on, match, job detail, CV draft and approval, and the review package, then every view at desktop and phone width. It fails on any uncaught page error. Screenshots go to `tmp/ui-smoke/` (git-ignored) |
 | `images` | yes | backend and egress-proxy image builds |
 | `proxy-verify` | opt-in (`--with proxy-verify`) | the real egress proxy checks from `deploy/egress-proxy/verify.py` in an isolated Docker network (needs network) |
 

@@ -257,3 +257,103 @@ export async function currentUser(): Promise<User | null> {
   if (!response.ok) throw new Error("Unable to load session");
   return response.json() as Promise<User>;
 }
+
+// --- agent, recommendations, preferences, suggestions, sources ------------------------------
+
+export type NextAction = { code: string; message: string; count: number | null; target: string };
+
+export type AgentStatus = {
+  auto_matching: boolean;
+  profile_ready: boolean;
+  queued_refreshes: number;
+  last_refresh_at: string | null;
+  last_ingestion_at: string | null;
+  counts: Record<"ready" | "review" | "unmatched" | "ineligible" | "stale" | "applied", number>;
+  next_actions: NextAction[];
+  policy_version: string;
+  rank_formula: string;
+};
+
+export type RefreshResult = { matched: number; already_current: number; carried_reviews: number; errors: number; truncated: boolean };
+
+export type Bucket = "ready" | "review" | "unmatched" | "ineligible";
+
+export type Recommendation = {
+  bucket: Bucket;
+  rank: number | null;
+  current: boolean;
+  job: { id: string; title: string; employer: string; location_text: string | null; work_mode: string; canonical_url: string; first_seen_at: string; source: string };
+  match: {
+    id: string;
+    eligibility_status: Match["eligibility"];
+    eligibility_reasons: MatchReason[];
+    fit_score: number;
+    fit_details: Record<string, unknown>;
+    preference_score: number;
+    preference_reasons: MatchReason[];
+    location_category: string | null;
+    policy_version: string;
+    created_at: string;
+  } | null;
+  application_id: string | null;
+  applied: boolean;
+  cv_status: CVVersion["status"] | null;
+};
+
+export const LOCATION_CATEGORIES = ["global_remote", "remote_from_home", "local_remote", "hybrid_home", "onsite_home", "abroad"] as const;
+export type LocationCategory = (typeof LOCATION_CATEGORIES)[number];
+export const LOCATION_LABELS: Record<LocationCategory, string> = {
+  global_remote: "Global remote (open to several countries, employer abroad)",
+  remote_from_home: "Remote from my country (employer abroad)",
+  local_remote: "Remote with an employer in my country",
+  hybrid_home: "Hybrid in my country",
+  onsite_home: "On-site in my country",
+  abroad: "Hybrid or on-site abroad (relocation)",
+};
+
+export type LocationPolicy = { home_country: string; priorities: LocationCategory[]; preferred_cities: string[]; open_to_relocation: boolean | null };
+
+export type PreferenceRules = {
+  target_roles: string[];
+  seniority: string[];
+  employment_types: string[];
+  compensation: { minimum?: number; currency?: string; period?: string };
+  work_modes: Array<"remote" | "hybrid" | "onsite" | "unknown">;
+  location_preferences: string[];
+  work_authorization: Record<string, unknown>;
+  notice_period_days: number | null;
+  location_policy: LocationPolicy | null;
+};
+
+export type Preferences = { id: string; rules: PreferenceRules; created_at: string; status: string };
+
+export type FactSuggestion = {
+  fact_type: string;
+  value: Record<string, unknown>;
+  provenance: string;
+  confirmation_status: string;
+  evidence_text: string;
+  already_in_profile: boolean;
+};
+
+export type Suggestions = { source_document_id: string; suggester_version: string; warnings: string[]; suggestions: FactSuggestion[] };
+
+export type Connector = {
+  id: string; name: string; kind: string; tier: string; base_domain: string | null; terms_version: string;
+  policy_status: string; enabled: boolean; scope: "shared" | "private"; authorization_basis: string | null;
+  health_status: string; consecutive_failures: number; last_run_at: string | null; last_success_at: string | null;
+  last_error_code: string | null; schedule_interval_seconds: number | null;
+};
+
+export type ApplicationSummary = {
+  id: string; job_id: string; title: string | null; employer: string | null;
+  status: Application["status"]; revision: number | null; unresolved_count: number; updated_at: string;
+};
+
+export function jsonBody(body: unknown, method = "POST"): RequestInit {
+  return { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+}
+
+export function message(reason: unknown, fallback: string): string {
+  return reason instanceof Error ? reason.message : fallback;
+}
